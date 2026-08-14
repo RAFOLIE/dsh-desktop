@@ -3,7 +3,7 @@
 **[中文](#中文) | [English](#english)**
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="DSH Desktop — native webchat in the shell window" width="860">
+  <img src="docs/screenshot-v2.png" alt="DSH Desktop — native webchat in the shell window" width="860">
 </p>
 
 ---
