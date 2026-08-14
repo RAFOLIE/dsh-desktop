@@ -9,7 +9,7 @@ DSH 插件:安装并启动 [dsh-desktop-windowos](https://github.com/RAFOLIE/dsh
 ## 安装
 
 ```sh
-dsh plugin --profile web add github:RAFOLIE/dsh-desktop-windowos#path:/plugin
+dsh plugin --profile web add dsh-desktop-plugin
 ```
 
 重启 DSH(`dsh web`)后生效。要求 Windows + Node ^22.19 或 ≥ 24。
@@ -35,7 +35,7 @@ DSH plugin that installs and launches [dsh-desktop-windowos](https://github.com/
 ## Install
 
 ```sh
-dsh plugin --profile web add github:RAFOLIE/dsh-desktop-windowos#path:/plugin
+dsh plugin --profile web add dsh-desktop-plugin
 ```
 
 Restart DSH (`dsh web`) to activate. Requires Windows + Node ^22.19 or ≥ 24.

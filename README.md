@@ -45,7 +45,7 @@ DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeSc
 **方式一:装 DSH 插件(推荐给 DSH 用户)**
 
 ```sh
-dsh plugin --profile web add github:RAFOLIE/dsh-desktop-windowos#path:/plugin
+dsh plugin --profile web add dsh-desktop-plugin
 ```
 
 重启 DSH 后插件自动把 exe 装到 `%LOCALAPPDATA%\Programs\dsh-desktop-windowos\` 并在桌面生成快捷方式「DeepSeek Harness」;对话里说“打开桌面应用”还能通过 `desktop_launch` 工具直接拉起。详见 [plugin/README.md](plugin/README.md)。
@@ -126,7 +126,7 @@ Not bundled with the exe:
 **Option A: install the DSH plugin (recommended for DSH users)**
 
 ```sh
-dsh plugin --profile web add github:RAFOLIE/dsh-desktop-windowos#path:/plugin
+dsh plugin --profile web add dsh-desktop-plugin
 ```
 
 After restarting DSH, the plugin auto-installs the exe into `%LOCALAPPDATA%\Programs\dsh-desktop-windowos` and creates the desktop shortcut "DeepSeek Harness"; saying "open the desktop app" in chat launches it via the `desktop_launch` tool. See [plugin/README.md](plugin/README.md).
