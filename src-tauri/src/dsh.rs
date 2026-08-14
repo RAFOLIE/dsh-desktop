@@ -143,6 +143,7 @@ pub fn startup(app: AppHandle) {
     // Attach path: DSH already up — never spawn, never kill on exit.
     if probe_ready_once() {
         let _ = app.emit("dsh-status", json!({ "status": "ready", "attached": true }));
+        crate::menu::install(app);
         return;
     }
 
@@ -186,6 +187,7 @@ fn try_candidate(app: &AppHandle, candidate: &Candidate) -> Attempt {
                 "dsh-status",
                 json!({ "status": "ready", "attached": false, "method": candidate.label }),
             );
+            crate::menu::install(app.clone());
             return Attempt::Ready;
         }
         // A missing command exits immediately; surface that instead of

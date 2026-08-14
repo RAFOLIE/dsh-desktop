@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.2.0 — 2026-08-14
+
+链接右键菜单重做。
+
+- 在 webchat 页面右键链接:自绘菜单替换 WebView2 默认 Edge 菜单,仅两项——「在浏览器中打开」「复制链接」
+- 默认菜单的问题:「在新窗口中打开链接」实际跳系统默认浏览器且文案误导,「发送标签页到你的设备」等项无用
+- 左键点击外链行为不变(仍由系统默认浏览器打开);非链接区域的右键菜单不变
+- 实现:就绪后 Rust 侧轮询注入幂等 JS(document 级捕获 contextmenu,匹配 `a[href]`)
+
+Reworked right-click menu for links.
+
+- Right-clicking a link in the webchat now shows a custom two-item menu — "Open in browser" / "Copy link" — replacing the default WebView2 Edge menu
+- The default menu was misleading ("open in new window" actually shelled out to the system browser) and carried dead entries
+- Left-click on external links keeps opening the system default browser; non-link right-clicks keep the default menu
+- Implementation: idempotent JS poll-injected from Rust after readiness (document-level contextmenu capture matching `a[href]`)
+
 ## v1.1.1 — 2026-08-14
 
 项目更名:`dsh-desktop` → `dsh-desktop-windowos`(与同名第三方项目区分)。

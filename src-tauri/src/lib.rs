@@ -2,6 +2,7 @@
 //! task-completion event monitor.
 
 mod dsh;
+mod menu;
 mod monitor;
 
 use tauri::{
