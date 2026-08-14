@@ -434,8 +434,21 @@ fn spawn_command(cmd: &str, cwd: &str) -> std::io::Result<Child> {
     let (stdout, stderr) = log_streams()?;
     let mut command = Command::new("cmd");
     // pnpm/npx/dsh are .cmd shims on Windows, so route through cmd /C; the
-    // candidate command is a shell command string either way.
-    command.arg("/C").arg(cmd).current_dir(cwd);
+    // candidate command is a shell command string either way. Pass it via
+    // `raw_arg` as `/S /C "…"`: std's automatic quoting would re-wrap the
+    // whole string and backslash-escape the inner quotes around
+    // space-containing paths, which cmd then misparses — `/S` strips only
+    // the outermost quote pair, preserving our inner quotes verbatim.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.raw_arg(format!("/S /C \"{cmd}\""));
+    }
+    #[cfg(not(windows))]
+    {
+        command.arg("/C").arg(cmd);
+    }
+    command.current_dir(cwd);
     command.stdout(stdout).stderr(stderr);
     apply_no_window(&mut command);
     command.spawn()

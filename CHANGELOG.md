@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.4.1 — 2026-08-14
+
+修复:本地安装候选在**路径含空格**时启动失败。
+
+- 根因:命令串先经 std 自动参数转义(整体再包一层引号、内部引号加反斜杠),再交 `cmd /C` 解析,多层引号规则互相冲突,带空格的 `node_modules\.bin\dsh.cmd` 路径被切碎
+- 修法:改用 `raw_arg` 走标准 `cmd /S /C "整条命令"` 形式——`/S` 只剥最外层引号,内部引号原样保留;所有候选(DSH_CMD/dsh web/本地安装/npx)统一受益
+- 已实测:在 `…\dsh space test` 目录放置本地安装,启动一次命中、10 秒就绪
+
+Fix: the project-local install candidate failed when its **path contained spaces**.
+
+- Root cause: the command string went through std's automatic argument quoting (re-wrapped whole-string quotes, backslash-escaped inner quotes) and then cmd's own parsing — the layers conflict and the space-containing `node_modules\.bin\dsh.cmd` path got mangled
+- Fix: spawn via `raw_arg` using the canonical `cmd /S /C "whole command"` form — `/S` strips only the outermost quote pair, inner quotes pass through verbatim; all candidates (DSH_CMD / dsh web / local install / npx) benefit
+- Verified: a local install placed in `…\dsh space test` starts on the first hit, ready in ~10s
+
 ## v1.4.0 — 2026-08-14
 
 启动链改为「本地优先、下载需确认」,并支持项目本地安装的 DSH。
