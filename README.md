@@ -14,6 +14,8 @@ DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeSc
 打开应用 → 自动拉起本机 DSH Web 服务 → 窗口直接显示原生 webchat → 托盘常驻,任务完成弹系统通知。
 交付物是**单个免安装裸 exe**(约 4.5 MB)。
 
+**推荐用法**:在任意文件夹执行 `pnpm add @deepseek-ai/dsh`(或 `npm i @deepseek-ai/dsh`),把 exe 放进**同一文件夹的根目录**双击即可——应用自动发现旁边的 `node_modules\.bin\dsh.cmd`,启动零下载、零配置、不询问。
+
 ### 功能
 
 - **开箱即用**:双击 exe 自动启动 DSH(`pnpm dsh web`),就绪后窗口直接打开 `http://127.0.0.1:3080/` 的**原生 webchat 界面**(不自创聊天 UI、不做反向代理)
@@ -82,6 +84,8 @@ icon-src/            图标源(DeepSeek 鲸鱼标,品牌蓝 #4D6BFE)
 A Windows desktop shell for DeepSeek Harness (DSH), built with **Tauri v2 + React 18 + TypeScript**.
 Launch the app → it auto-starts the local DSH web service → the window shows the native webchat → tray-resident with system notifications on task completion.
 Ships as a **single portable bare exe** (~4.5 MB, no installer).
+
+**Recommended setup**: run `pnpm add @deepseek-ai/dsh` (or `npm i @deepseek-ai/dsh`) in any folder, then drop the exe into **that folder's root** and double-click — the app auto-discovers the adjacent `node_modules\.bin\dsh.cmd`: zero download, zero config, no questions asked.
 
 ### Features
 
