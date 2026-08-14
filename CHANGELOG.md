@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.1.1 — 2026-08-14
+
+项目更名:`dsh-desktop` → `dsh-desktop-windowos`(与同名第三方项目区分)。
+
+- 本地目录、npm 包名、Cargo 包名、产物 exe(`dsh-desktop-windowos.exe`)、GitHub 仓库全部同步更名
+- 运行时行为不变:窗口标题、AUMID/通知标识、数据目录(`%LOCALAPPDATA%\dsh-desktop\`)均保持
+
+Project renamed: `dsh-desktop` → `dsh-desktop-windowos` (disambiguation from a same-name third-party project).
+
+- Local folder, npm package name, Cargo package name, built exe (`dsh-desktop-windowos.exe`), and the GitHub repo all renamed together
+- Runtime behavior unchanged: window title, AUMID/toast identity, and data dir (`%LOCALAPPDATA%\dsh-desktop\`) kept as-is
+
 ## v1.1.0 — 2026-08-14
 
 启动方式与文件路径解耦,改用官方命令行。

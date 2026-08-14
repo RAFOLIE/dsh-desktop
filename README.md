@@ -1,4 +1,4 @@
-# DSH Desktop
+# DSH Desktop (dsh-desktop-windowos)
 
 **[中文](#中文) | [English](#english)**
 
@@ -38,7 +38,7 @@ DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeSc
 
 ### 快速开始
 
-1. 解压 zip,双击 `dsh-desktop.exe`。**首次运行 Windows SmartScreen 可能拦截(exe 未签名)**:点「更多信息 → 仍要运行」即可
+1. 解压 zip,双击 `dsh-desktop-windowos.exe`。**首次运行 Windows SmartScreen 可能拦截(exe 未签名)**:点「更多信息 → 仍要运行」即可
 2. 机器满足以下任一状态,双击后自动进入 webchat:
    - **已有 DSH 在跑**(如自己开过 `dsh web`)→ 自动附加,直接使用,无需 Node 在 PATH
    - **已装 Node.js ≥ 20** → 自动经 `npx --yes @deepseek-ai/dsh web` 拉起官方 DSH(首次含包下载,稍慢;若超时点「重试」,已下载部分有缓存)
@@ -52,7 +52,7 @@ DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeSc
 ```powershell
 pnpm install        # 本项目是独立工作区根
 pnpm tauri dev      # 开发模式
-pnpm tauri build    # 产物:src-tauri\target\release\dsh-desktop.exe
+pnpm tauri build    # 产物:src-tauri\target\release\dsh-desktop-windowos.exe
 ```
 
 ### 工作原理
@@ -104,7 +104,7 @@ Not bundled with the exe:
 
 ### Quick Start
 
-1. Unzip and double-click `dsh-desktop.exe`. **Windows SmartScreen may warn on first run (the exe is unsigned)**: click "More info → Run anyway"
+1. Unzip and double-click `dsh-desktop-windowos.exe`. **Windows SmartScreen may warn on first run (the exe is unsigned)**: click "More info → Run anyway"
 2. Any of these machine states works — the app auto-enters the webchat after launch:
    - **DSH already running** (e.g. you started `dsh web` yourself) → auto-attach, works immediately, no Node needed on PATH
    - **Node.js ≥ 20 installed** → DSH is auto-started via `npx --yes @deepseek-ai/dsh web` (first run downloads the package; if it times out, hit "重试" (retry) — completed downloads are cached)
@@ -118,7 +118,7 @@ Not bundled with the exe:
 ```powershell
 pnpm install        # this project is its own workspace root
 pnpm tauri dev      # dev mode
-pnpm tauri build    # output: src-tauri\target\release\dsh-desktop.exe
+pnpm tauri build    # output: src-tauri\target\release\dsh-desktop-windowos.exe
 ```
 
 ### How it works

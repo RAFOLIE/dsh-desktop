@@ -1,6 +1,6 @@
 [package]
-name = "dsh-desktop"
-version = "1.1.0"
+name = "dsh-desktop-windowos"
+version = "1.1.1"
 description = "DeepSeek Harness desktop shell"
 authors = ["RAFOLIE"]
 edition = "2021"
