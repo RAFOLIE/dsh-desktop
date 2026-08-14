@@ -40,7 +40,7 @@ DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeSc
 
 ### 快速开始
 
-1. 解压 zip,双击 `dsh-desktop-windowos.exe`。**首次运行 Windows SmartScreen 可能拦截(exe 未签名)**:点「更多信息 → 仍要运行」即可
+1. 从 [Releases](https://github.com/RAFOLIE/dsh-desktop-windowos/releases) 下载 `dsh-desktop-windowos-v<版本>.exe`,双击运行(免安装单文件,无需解压)。**首次运行 Windows SmartScreen 可能拦截(exe 未签名)**:点「更多信息 → 仍要运行」即可
 2. 机器满足以下任一状态,双击后自动进入 webchat:
    - **已有 DSH 在跑**(如自己开过 `dsh web`)→ 自动附加,直接使用,无需 Node 在 PATH
    - **已装 Node.js(^22.19 或 ≥ 24)** → 自动经 `npx --yes @deepseek-ai/dsh web` 拉起官方 DSH(首次含包下载,可能需要几分钟;若超时点「重试」,已下载部分有缓存)
@@ -108,7 +108,7 @@ Not bundled with the exe:
 
 ### Quick Start
 
-1. Unzip and double-click `dsh-desktop-windowos.exe`. **Windows SmartScreen may warn on first run (the exe is unsigned)**: click "More info → Run anyway"
+1. Download `dsh-desktop-windowos-v<version>.exe` from [Releases](https://github.com/RAFOLIE/dsh-desktop-windowos/releases) and double-click it (single portable file, no unzip needed). **Windows SmartScreen may warn on first run (the exe is unsigned)**: click "More info → Run anyway"
 2. Any of these machine states works — the app auto-enters the webchat after launch:
    - **DSH already running** (e.g. you started `dsh web` yourself) → auto-attach, works immediately, no Node needed on PATH
    - **Node.js ^22.19 or ≥ 24 installed** → DSH is auto-started via `npx --yes @deepseek-ai/dsh web` (the first run downloads the package and can take a few minutes; if it times out, hit "重试" (retry) — completed downloads are cached)
