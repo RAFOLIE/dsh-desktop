@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ensureInstalled, pickExeAssetUrl, type InstallerDeps } from '../src/installer.js'
+import { ensureInstalled, ensureWebShortcut, pickExeAssetUrl, type InstallerDeps } from '../src/installer.js'
 import { resolveConfig } from '../src/config.js'
 
 const config = resolveConfig({ installDir: 'C:\\Apps\\dsh', shortcutName: 'DSH' })
@@ -13,6 +13,7 @@ function makeDeps(overrides: Partial<InstallerDeps> = {}): InstallerDeps & {
     exists: () => false,
     mkdir: dir => { calls.mkdir.push(dir) },
     writeFile: (path, data) => { calls.writeFile.push([path, data.length]) },
+    desktopDir: async () => 'C:\\Users\\A\\Desktop',
     fetchText: async () =>
       JSON.stringify({ assets: [
         { name: 'dsh-desktop-windowos-v1.4.2.zip', browser_download_url: 'https://example/z.zip' },
@@ -60,5 +61,46 @@ describe('ensureInstalled', () => {
     const result = await ensureInstalled(noShortcut, deps)
     expect(result.shortcut).toBe(false)
     expect(deps.calls.shortcut).toEqual([])
+  })
+})
+
+describe('ensureWebShortcut', () => {
+  it('writes a .url with the web URL and the exe icon when the exe exists', async () => {
+    const writes: Array<[string, string]> = []
+    const deps = makeDeps({
+      exists: () => true,
+      writeFile: (path, data) => { writes.push([path, data.toString('utf8')]) },
+    })
+    const result = await ensureWebShortcut(config, deps)
+    expect(result.created).toBe(true)
+    expect(result.path).toBe('C:\\Users\\A\\Desktop\\DeepSeek Harness Web.url')
+    expect(writes).toEqual([[
+      result.path,
+      '[InternetShortcut]\r\n'
+      + 'URL=http://127.0.0.1:3080\r\n'
+      + 'IconFile=C:\\Apps\\dsh\\dsh-desktop-windowos.exe\r\n'
+      + 'IconIndex=0\r\n',
+    ]])
+  })
+
+  it('omits the icon lines when the exe is missing', async () => {
+    const writes: Array<[string, string]> = []
+    const deps = makeDeps({
+      writeFile: (path, data) => { writes.push([path, data.toString('utf8')]) },
+    })
+    const result = await ensureWebShortcut(config, deps)
+    expect(result.created).toBe(true)
+    expect(writes).toHaveLength(1)
+    expect(writes[0][1]).not.toContain('IconFile')
+    expect(writes[0][1]).toContain('URL=http://127.0.0.1:3080\r\n')
+  })
+
+  it('does nothing when disabled', async () => {
+    const disabled = resolveConfig({ installDir: 'C:\\Apps\\dsh', createWebShortcut: false })
+    const deps = makeDeps({ desktopDir: async () => { throw new Error('must not resolve') } })
+    const result = await ensureWebShortcut(disabled, deps)
+    expect(result.created).toBe(false)
+    expect(result.path).toBe('')
+    expect(deps.calls.writeFile).toEqual([])
   })
 })

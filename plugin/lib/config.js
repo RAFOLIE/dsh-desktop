@@ -15,8 +15,11 @@ export function defaultInstallDir() {
 export const Config = z.object({
     autoInstall: z.boolean().default(true),
     createShortcut: z.boolean().default(true),
+    createWebShortcut: z.boolean().default(true),
     installDir: z.string().default(defaultInstallDir()),
     shortcutName: z.string().default('DeepSeek Harness'),
+    webShortcutName: z.string().default('DeepSeek Harness Web'),
+    webUrl: z.string().default('http://127.0.0.1:3080'),
     repoSlug: z.string().default('RAFOLIE/dsh-desktop-windowos'),
 });
 /**
@@ -28,8 +31,11 @@ export function resolveConfig(config = {}) {
     return {
         autoInstall: config.autoInstall ?? true,
         createShortcut: config.createShortcut ?? true,
+        createWebShortcut: config.createWebShortcut ?? true,
         installDir: config.installDir ?? defaultInstallDir(),
         shortcutName: config.shortcutName ?? 'DeepSeek Harness',
+        webShortcutName: config.webShortcutName ?? 'DeepSeek Harness Web',
+        webUrl: config.webUrl ?? 'http://127.0.0.1:3080',
         repoSlug: config.repoSlug ?? 'RAFOLIE/dsh-desktop-windowos',
     };
 }

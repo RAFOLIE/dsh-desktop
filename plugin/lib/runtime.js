@@ -4,7 +4,7 @@
  */
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { resolveConfig } from './config.js';
-import { ensureInstalled, nodeDeps } from './installer.js';
+import { ensureInstalled, ensureWebShortcut, nodeDeps } from './installer.js';
 import { launchDesktop } from './launcher.js';
 /**
  * Apply the plugin to its Cordis context.
@@ -25,13 +25,22 @@ export function apply(ctx, config) {
             logger.info(`dsh-desktop-plugin: exe ready at ${result.exePath}`
                 + `${result.downloaded ? ' (downloaded)' : ''}${result.shortcut ? ', shortcut refreshed' : ''}`);
         })
-            .catch(error => { logger.warn(`dsh-desktop-plugin: install failed: ${String(error)}`); });
+            .catch(error => { logger.warn(`dsh-desktop-plugin: install failed: ${String(error)}`); })
+            // The web .url shortcut is independent of the exe download; run it
+            // after install settles so the exe icon is available whenever possible.
+            .finally(() => ensureWebShortcut(resolved, nodeDeps())
+            .then(web => {
+            if (web.created)
+                logger.info(`dsh-desktop-plugin: web shortcut ready at ${web.path}`);
+        })
+            .catch(error => { logger.warn(`dsh-desktop-plugin: web shortcut failed: ${String(error)}`); }));
     }
     ctx.tools.register(defineTool({
         name: 'desktop_launch',
         description: 'Launch the DSH desktop app (dsh-desktop-windowos, a Windows tray shell around the webchat). '
             + 'Installs it first when missing: downloads the exe from GitHub Releases into %LOCALAPPDATA%\\Programs\\dsh-desktop-windowos '
-            + 'and creates/refreshes the desktop shortcut. Use when the user wants to open or install the desktop app.',
+            + 'and creates/refreshes the desktop shortcut plus a "DeepSeek Harness Web" .url shortcut that opens the web UI. '
+            + 'Use when the user wants to open or install the desktop app.',
         parameters: {},
         output: {
             schema: {
@@ -53,6 +62,9 @@ export function apply(ctx, config) {
                 return { launched: false, exePath: '' };
             }
             const result = await ensureInstalled(resolved, nodeDeps());
+            // Self-heal the web shortcut too, but never block the launch on it.
+            await ensureWebShortcut(resolved, nodeDeps())
+                .catch(error => { logger.warn(`dsh-desktop-plugin: web shortcut failed: ${String(error)}`); });
             launchDesktop(result.exePath);
             return { launched: true, exePath: result.exePath };
         },

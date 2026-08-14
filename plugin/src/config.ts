@@ -11,10 +11,16 @@ export interface Config {
   autoInstall?: boolean
   /** Create/refresh the desktop shortcut named `shortcutName`. */
   createShortcut?: boolean
+  /** Create/refresh a desktop .url shortcut that opens `webUrl` in a browser. */
+  createWebShortcut?: boolean
   /** Install directory; empty uses %LOCALAPPDATA%\Programs\dsh-desktop-windowos. */
   installDir?: string
   /** Desktop shortcut display name (no version). */
   shortcutName?: string
+  /** Web UI desktop shortcut display name (no extension). */
+  webShortcutName?: string
+  /** URL the web UI desktop shortcut opens. */
+  webUrl?: string
   /** `owner/repo` whose GitHub Releases provide the exe. */
   repoSlug?: string
 }
@@ -23,8 +29,11 @@ export interface Config {
 export interface ResolvedConfig {
   autoInstall: boolean
   createShortcut: boolean
+  createWebShortcut: boolean
   installDir: string
   shortcutName: string
+  webShortcutName: string
+  webUrl: string
   repoSlug: string
 }
 
@@ -40,8 +49,11 @@ export function defaultInstallDir(): string {
 export const Config: z<Config> = z.object({
   autoInstall: z.boolean().default(true),
   createShortcut: z.boolean().default(true),
+  createWebShortcut: z.boolean().default(true),
   installDir: z.string().default(defaultInstallDir()),
   shortcutName: z.string().default('DeepSeek Harness'),
+  webShortcutName: z.string().default('DeepSeek Harness Web'),
+  webUrl: z.string().default('http://127.0.0.1:3080'),
   repoSlug: z.string().default('RAFOLIE/dsh-desktop-windowos'),
 })
 
@@ -54,8 +66,11 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
   return {
     autoInstall: config.autoInstall ?? true,
     createShortcut: config.createShortcut ?? true,
+    createWebShortcut: config.createWebShortcut ?? true,
     installDir: config.installDir ?? defaultInstallDir(),
     shortcutName: config.shortcutName ?? 'DeepSeek Harness',
+    webShortcutName: config.webShortcutName ?? 'DeepSeek Harness Web',
+    webUrl: config.webUrl ?? 'http://127.0.0.1:3080',
     repoSlug: config.repoSlug ?? 'RAFOLIE/dsh-desktop-windowos',
   }
 }

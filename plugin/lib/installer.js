@@ -14,6 +14,17 @@ export function nodeDeps() {
         exists: path => fs.existsSync(path),
         mkdir: dir => fs.mkdirSync(dir, { recursive: true }),
         writeFile: (path, data) => fs.writeFileSync(path, data),
+        // [Environment]::GetFolderPath follows the known-desktop redirection
+        // (OneDrive etc.) that a naive %USERPROFILE%\Desktop join would miss.
+        desktopDir: () => new Promise((resolve, reject) => {
+            const child = spawn('powershell', ['-NoProfile', '-Command', "[Environment]::GetFolderPath('Desktop')"], {
+                windowsHide: true,
+            });
+            let out = '';
+            child.stdout.on('data', chunk => { out += chunk; });
+            child.on('error', reject);
+            child.on('exit', code => (code === 0 ? resolve(out.trim()) : reject(new Error(`desktopDir exit ${code}`))));
+        }),
         // The API JSON is small and works over plain fetch.
         fetchText: async (url) => {
             const response = await fetch(url, {
@@ -105,4 +116,25 @@ export async function ensureInstalled(config, deps) {
         shortcut = true;
     }
     return { exePath, downloaded, shortcut };
+}
+/**
+ * Ensure a desktop `.url` shortcut opens the DSH web UI in the default
+ * browser, borrowing the desktop exe's icon when that exe is installed.
+ * Independent of the exe download; safe to re-run.
+ * @param config - resolved plugin configuration.
+ * @param deps - host boundary to fake in tests.
+ * @returns what happened during this run.
+ */
+export async function ensureWebShortcut(config, deps) {
+    if (!config.createWebShortcut)
+        return { path: '', created: false };
+    const desktopDir = await deps.desktopDir();
+    const path = `${desktopDir}\\${config.webShortcutName}.url`;
+    const lines = ['[InternetShortcut]', `URL=${config.webUrl}`];
+    const exePath = `${config.installDir}\\dsh-desktop-windowos.exe`;
+    if (deps.exists(exePath)) {
+        lines.push(`IconFile=${exePath}`, 'IconIndex=0');
+    }
+    deps.writeFile(path, Buffer.from(`${lines.join('\r\n')}\r\n`, 'utf8'));
+    return { path, created: true };
 }

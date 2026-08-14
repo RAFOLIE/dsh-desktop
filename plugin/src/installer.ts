@@ -12,6 +12,8 @@ export interface InstallerDeps {
   exists(path: string): boolean
   mkdir(dir: string): void
   writeFile(path: string, data: Buffer): void
+  /** Resolve the user's real desktop directory (OneDrive-redirection safe). */
+  desktopDir(): Promise<string>
   /** Fetch a URL's body as JSON text (GitHub API). */
   fetchText(url: string): Promise<string>
   /** Fetch a URL's body as bytes (release asset). */
@@ -29,6 +31,14 @@ export interface InstallResult {
   shortcut: boolean
 }
 
+/** Outcome of one ensureWebShortcut run. */
+export interface WebShortcutResult {
+  /** Absolute path of the .url file; empty when creation is disabled. */
+  path: string
+  /** The web shortcut was created/refreshed. */
+  created: boolean
+}
+
 /** Single-quote escape for PowerShell string literals. */
 function psQuote(value: string): string {
   return value.replaceAll('\'', '\'\'')
@@ -40,6 +50,17 @@ export function nodeDeps(): InstallerDeps {
     exists: path => fs.existsSync(path),
     mkdir: dir => fs.mkdirSync(dir, { recursive: true }),
     writeFile: (path, data) => fs.writeFileSync(path, data),
+    // [Environment]::GetFolderPath follows the known-desktop redirection
+    // (OneDrive etc.) that a naive %USERPROFILE%\Desktop join would miss.
+    desktopDir: () => new Promise((resolve, reject) => {
+      const child = spawn('powershell', ['-NoProfile', '-Command', "[Environment]::GetFolderPath('Desktop')"], {
+        windowsHide: true,
+      })
+      let out = ''
+      child.stdout.on('data', chunk => { out += chunk })
+      child.on('error', reject)
+      child.on('exit', code => (code === 0 ? resolve(out.trim()) : reject(new Error(`desktopDir exit ${code}`))))
+    }),
     // The API JSON is small and works over plain fetch.
     fetchText: async url => {
       const response = await fetch(url, {
@@ -123,4 +144,25 @@ export async function ensureInstalled(config: ResolvedConfig, deps: InstallerDep
     shortcut = true
   }
   return { exePath, downloaded, shortcut }
+}
+
+/**
+ * Ensure a desktop `.url` shortcut opens the DSH web UI in the default
+ * browser, borrowing the desktop exe's icon when that exe is installed.
+ * Independent of the exe download; safe to re-run.
+ * @param config - resolved plugin configuration.
+ * @param deps - host boundary to fake in tests.
+ * @returns what happened during this run.
+ */
+export async function ensureWebShortcut(config: ResolvedConfig, deps: InstallerDeps): Promise<WebShortcutResult> {
+  if (!config.createWebShortcut) return { path: '', created: false }
+  const desktopDir = await deps.desktopDir()
+  const path = `${desktopDir}\\${config.webShortcutName}.url`
+  const lines = ['[InternetShortcut]', `URL=${config.webUrl}`]
+  const exePath = `${config.installDir}\\dsh-desktop-windowos.exe`
+  if (deps.exists(exePath)) {
+    lines.push(`IconFile=${exePath}`, 'IconIndex=0')
+  }
+  deps.writeFile(path, Buffer.from(`${lines.join('\r\n')}\r\n`, 'utf8'))
+  return { path, created: true }
 }

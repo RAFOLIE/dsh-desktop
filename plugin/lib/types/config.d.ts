@@ -9,10 +9,16 @@ export interface Config {
     autoInstall?: boolean;
     /** Create/refresh the desktop shortcut named `shortcutName`. */
     createShortcut?: boolean;
+    /** Create/refresh a desktop .url shortcut that opens `webUrl` in a browser. */
+    createWebShortcut?: boolean;
     /** Install directory; empty uses %LOCALAPPDATA%\Programs\dsh-desktop-windowos. */
     installDir?: string;
     /** Desktop shortcut display name (no version). */
     shortcutName?: string;
+    /** Web UI desktop shortcut display name (no extension). */
+    webShortcutName?: string;
+    /** URL the web UI desktop shortcut opens. */
+    webUrl?: string;
     /** `owner/repo` whose GitHub Releases provide the exe. */
     repoSlug?: string;
 }
@@ -20,8 +26,11 @@ export interface Config {
 export interface ResolvedConfig {
     autoInstall: boolean;
     createShortcut: boolean;
+    createWebShortcut: boolean;
     installDir: string;
     shortcutName: string;
+    webShortcutName: string;
+    webUrl: string;
     repoSlug: string;
 }
 /** Default install directory under %LOCALAPPDATA%. */
