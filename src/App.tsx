@@ -7,6 +7,7 @@ import "./App.css";
 type DshStatus =
   | { status: "starting"; method?: string }
   | { status: "ready"; attached: boolean; method?: string }
+  | { status: "notfound" }
   | { status: "error"; message: string };
 
 /** Shell boot page: waits for DSH, then hands the whole window to the native
@@ -64,12 +65,38 @@ function App() {
         </div>
       )}
 
+      {status.status === "notfound" && (
+        <div className="state">
+          <div className="text error">未找到本机 DSH</div>
+          <div className="detail">
+            已搜索 PATH、应用目录与用户目录,均未发现 DSH 安装
+            (node_modules\.bin\dsh.cmd)。请选择:
+          </div>
+          <button type="button" onClick={() => invoke("dsh_download")}>
+            下载并启动(首次约几分钟)
+          </button>
+          <button type="button" onClick={() => invoke("dsh_retry")}>
+            重新检测
+          </button>
+          <button type="button" onClick={() => invoke("dsh_exit")}>
+            退出
+          </button>
+          <div className="detail">
+            推荐:命令行执行 npm i -g @deepseek-ai/dsh
+            全局安装,之后启动不再询问;选过「下载并启动」后下次也会自动走 npx
+          </div>
+        </div>
+      )}
+
       {status.status === "error" && (
         <div className="state">
           <div className="text error">DSH 启动失败</div>
           <div className="detail">{status.message}</div>
           <button type="button" onClick={() => invoke("dsh_retry")}>
             重试
+          </button>
+          <button type="button" onClick={() => invoke("dsh_download")}>
+            改用 npx 下载启动
           </button>
         </div>
       )}

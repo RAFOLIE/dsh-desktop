@@ -21,6 +21,20 @@ fn dsh_retry(app: AppHandle) {
     dsh::retry(app);
 }
 
+/// Frontend-invoked npx download consent after `notfound` (or as an error
+/// fallback): persists the choice and runs the npx candidate.
+#[tauri::command]
+fn dsh_download(app: AppHandle) {
+    dsh::download_and_start(app);
+}
+
+/// Frontend-invoked exit from the notfound choice.
+#[tauri::command]
+fn dsh_exit(app: AppHandle) {
+    dsh::teardown(&app);
+    app.exit(0);
+}
+
 /// Show and focus the main window (tray double-click / Open DSH menu item /
 /// toast "打开窗口" button / second-instance relaunch).
 pub(crate) fn show_main_window(app: &AppHandle) {
@@ -85,7 +99,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .manage(dsh::DshState::new())
-        .invoke_handler(tauri::generate_handler![dsh_retry])
+        .invoke_handler(tauri::generate_handler![dsh_retry, dsh_download, dsh_exit])
         .setup(|app| {
             #[cfg(windows)]
             ensure_toast_aumid();

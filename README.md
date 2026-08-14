@@ -25,7 +25,7 @@ DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeSc
 - **干净退出**:仅托盘右键 → 「退出(关闭 DSH)」才真正退出,自动 `taskkill /T` 杀掉自己拉起的整棵进程树,零孤儿进程
 - **防重复实例**:exe 被再次双击只会唤回已有窗口,不会开第二个
 - **便携小巧**:单文件、无安装器、无 DLL 依赖,数据/日志写在 `%LOCALAPPDATA%\dsh-desktop\`
-- **官方命令启动,无路径依赖**:按候选链自动启动 DSH——已全局安装则用 `dsh web`,否则用官方零安装命令 `npx @deepseek-ai/dsh web`(仅需 Node);源码开发者可用环境变量 `DSH_CMD` / `DSH_CWD` 完全自定义启动命令
+- **本地优先启动,下载需确认**:按候选链自动启动 DSH——PATH 全局安装的 `dsh web` → 项目本地 `node_modules\.bin\dsh.cmd`(exe 同目录/工作目录/用户目录,覆盖 `pnpm add` 本地安装)→ 已确认过的 npx 下载;全都找不到时**弹窗让你选**下载/重新检测/退出,不会静默下载几百 MB 依赖。源码开发者可用环境变量 `DSH_CMD` / `DSH_CWD` 完全自定义启动命令
 
 ### 前提条件
 
@@ -34,7 +34,7 @@ DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeSc
 | 项 | 要求 |
 |---|---|
 | Node.js | ^22.19 或 ≥ 24(**必须**;DSH 的 Node 版本要求) |
-| DSH | 可选:全局安装 `npm i -g @deepseek-ai/dsh`(启动最快);未安装则自动走内置的 `npx @deepseek-ai/dsh web` |
+| DSH | 可选,三种方式任一:全局安装 `npm i -g @deepseek-ai/dsh`(最快,推荐);本地安装(在 exe 旁或任意被搜索目录执行 `pnpm add @deepseek-ai/dsh`);都没有则首次启动时点「下载并启动」走 npx |
 | 从源码跑 DSH 的开发者 | 设 `DSH_CMD`(`pnpm dsh web`)与 `DSH_CWD`(DSH 仓库路径)环境变量 |
 | WebView2 | Windows 11 自带 |
 
@@ -43,9 +43,10 @@ DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeSc
 1. 从 [Releases](https://github.com/RAFOLIE/dsh-desktop-windowos/releases) 下载 `dsh-desktop-windowos-v<版本>.exe`,双击运行(免安装单文件,无需解压)。**首次运行 Windows SmartScreen 可能拦截(exe 未签名)**:点「更多信息 → 仍要运行」即可
 2. 机器满足以下任一状态,双击后自动进入 webchat:
    - **已有 DSH 在跑**(如自己开过 `dsh web`)→ 自动附加,直接使用,无需 Node 在 PATH
-   - **已装 Node.js(^22.19 或 ≥ 24)** → 自动经 `npx --yes @deepseek-ai/dsh web` 拉起官方 DSH(首次含包下载,可能需要几分钟;若超时点「重试」,已下载部分有缓存)
-   - **推荐**:`npm i -g @deepseek-ai/dsh` 全局安装后启动最快,且启动时无需网络
-3. 若 Node 与 DSH 均未安装:壳窗口能打开,但 DSH 无法启动,页面会列出每种启动方式的具体失败原因
+   - **全局装了 DSH**(`npm i -g @deepseek-ai/dsh`,**推荐**)→ 启动最快,无需网络
+   - **本地装了 DSH**(在 exe 同目录、工作目录或用户目录 `pnpm add @deepseek-ai/dsh`)→ 自动发现 `node_modules\.bin\dsh.cmd` 并使用
+   - **之前选过「下载并启动」** → 自动经 `npx --yes @deepseek-ai/dsh web` 拉起(首选项记录在 `%LOCALAPPDATA%\dsh-desktop\settings.json`)
+3. 若本地没有任何 DSH:启动页弹出选择——**「下载并启动」**(首次下载约几分钟,之后走缓存)/「重新检测」/「退出」,不会未经同意就开始下载;需 Node.js(^22.19 或 ≥ 24)
 
 ### 构建前提(Windows)
 
@@ -59,7 +60,7 @@ pnpm tauri build    # 产物:src-tauri\target\release\dsh-desktop-windowos.exe
 
 ### 工作原理
 
-- Rust 侧以 `POST /api/host.describe` 探测就绪(`result.ok === true` 即就绪);启动走候选链:`DSH_CMD` 环境变量 → `dsh web`(PATH 全局安装)→ `npx @deepseek-ai/dsh web`(官方零安装命令),每个候选独立就绪窗口,失败自动降级并在日志/错误信息中记录每次尝试;子进程经 `cmd /C` 拉起(加 `CREATE_NO_WINDOW`,stdout/stderr 写日志)
+- Rust 侧以 `POST /api/host.describe` 探测就绪(`result.ok === true` 即就绪);启动走本地优先候选链:`DSH_CMD` 环境变量 → `dsh web`(PATH 全局)→ `node_modules\.bin\dsh.cmd`(exe 同目录/工作目录/用户目录)→ 已确认过的 `npx --yes @deepseek-ai/dsh web`(首选项持久化在 `%LOCALAPPDATA%\dsh-desktop\settings.json`),链空则发 `notfound` 事件由启动页让用户选;每个候选独立就绪窗口,失败自动降级并在日志/错误信息中记录每次尝试;子进程经 `cmd /C` 拉起(加 `CREATE_NO_WINDOW`,stdout/stderr 写日志)
 - 监听 `ws://127.0.0.1:3080/api/events.host`,在 `host/session-status` 的 `running` 出现 **true→false 边沿**且主窗口隐藏时,经 `session.list` 取会话标题弹通知
 - 裸 exe 无安装器,Windows 会静默吞 Toast——应用启动时自动在注册表注册 AppUserModelID(`HKCU\Software\Classes\AppUserModelId\com.dsh.desktop`)保证通知可达
 
@@ -93,7 +94,7 @@ Ships as a **single portable bare exe** (~4.5 MB, no installer).
 - **Clean exit**: only tray right-click → "Quit (close DSH)" exits, tearing down the process tree it spawned via `taskkill /T` with zero orphans
 - **Single instance**: launching the exe again just focuses the existing window
 - **Portable & small**: one file, no installer, no DLL dependencies; data/logs go to `%LOCALAPPDATA%\dsh-desktop\`
-- **Official CLI launch, path-free**: starts DSH via a candidate chain — `dsh web` if globally installed, otherwise the official zero-install `npx @deepseek-ai/dsh web` (Node.js only); source developers can fully customize via the `DSH_CMD` / `DSH_CWD` env vars
+- **Local-first launch, download with consent**: starts DSH via a candidate chain — PATH-global `dsh web` → project-local `node_modules\.bin\dsh.cmd` (exe dir / working dir / user profile, covering `pnpm add` local installs) → a previously consented npx download; when nothing local exists the boot page **asks** download / re-detect / exit instead of silently pulling hundreds of MB. Source developers can fully customize via the `DSH_CMD` / `DSH_CWD` env vars
 
 ### Prerequisites (target machine)
 
@@ -102,7 +103,7 @@ Not bundled with the exe:
 | Item | Requirement |
 |---|---|
 | Node.js | ^22.19 or ≥ 24 (**required**; the Node version DSH declares) |
-| DSH | optional: global install `npm i -g @deepseek-ai/dsh` (fastest launch); otherwise the built-in `npx @deepseek-ai/dsh web` is used automatically |
+| DSH | optional, any of: global install `npm i -g @deepseek-ai/dsh` (fastest, recommended); local install (`pnpm add @deepseek-ai/dsh` beside the exe or in any searched dir); or click "下载并启动" on first launch to go through npx |
 | Running DSH from source | set the `DSH_CMD` (`pnpm dsh web`) and `DSH_CWD` (DSH repo path) env vars |
 | WebView2 | included with Windows 11 |
 
@@ -111,9 +112,10 @@ Not bundled with the exe:
 1. Download `dsh-desktop-windowos-v<version>.exe` from [Releases](https://github.com/RAFOLIE/dsh-desktop-windowos/releases) and double-click it (single portable file, no unzip needed). **Windows SmartScreen may warn on first run (the exe is unsigned)**: click "More info → Run anyway"
 2. Any of these machine states works — the app auto-enters the webchat after launch:
    - **DSH already running** (e.g. you started `dsh web` yourself) → auto-attach, works immediately, no Node needed on PATH
-   - **Node.js ^22.19 or ≥ 24 installed** → DSH is auto-started via `npx --yes @deepseek-ai/dsh web` (the first run downloads the package and can take a few minutes; if it times out, hit "重试" (retry) — completed downloads are cached)
-   - **Recommended**: `npm i -g @deepseek-ai/dsh` for the fastest launch with no network needed at startup
-3. With neither Node nor DSH installed: the shell window opens, but DSH cannot start — the boot page lists the specific failure reason of each launch method
+   - **DSH installed globally** (`npm i -g @deepseek-ai/dsh`, **recommended**) → fastest launch, no network needed
+   - **DSH installed locally** (`pnpm add @deepseek-ai/dsh` beside the exe, in the working dir, or the user profile) → `node_modules\.bin\dsh.cmd` is discovered and used
+   - **"Download" picked before** → DSH auto-starts via `npx --yes @deepseek-ai/dsh web` (choice persisted in `%LOCALAPPDATA%\dsh-desktop\settings.json`)
+3. With no local DSH at all: the boot page offers a choice — **"下载并启动" (download & start, first run takes a few minutes)** / "重新检测" (re-detect) / "退出" (exit). Nothing downloads without consent; Node.js ^22.19 or ≥ 24 is required for the npx path
 
 ### Building (Windows)
 
@@ -127,6 +129,6 @@ pnpm tauri build    # output: src-tauri\target\release\dsh-desktop-windowos.exe
 
 ### How it works
 
-- The Rust side probes readiness via `POST /api/host.describe` (`result.ok === true`); launch runs a candidate chain: `DSH_CMD` env var → `dsh web` (global install on PATH) → `npx @deepseek-ai/dsh web` (official zero-install command), each with its own readiness window, falling through on failure with every attempt logged; the child is spawned via `cmd /C` (with `CREATE_NO_WINDOW`; stdout/stderr to a log file)
+- The Rust side probes readiness via `POST /api/host.describe` (`result.ok === true`); launch runs a local-first candidate chain: `DSH_CMD` env var → `dsh web` (global install on PATH) → `node_modules\.bin\dsh.cmd` (exe dir / working dir / user profile) → a previously consented `npx --yes @deepseek-ai/dsh web` (choice persisted in `%LOCALAPPDATA%\dsh-desktop\settings.json`); an empty chain emits `notfound` and the boot page offers download / re-detect / exit — each candidate has its own readiness window, falls through on failure with every attempt logged; the child is spawned via `cmd /C` (with `CREATE_NO_WINDOW`; stdout/stderr to a log file)
 - It listens on `ws://127.0.0.1:3080/api/events.host`; on a **true→false edge** of `running` in `host/session-status` while the window is hidden, it resolves the session title via `session.list` and fires the toast
 - A bare exe has no installer, so Windows would silently drop toasts — the app registers its AppUserModelID in the registry at startup (`HKCU\Software\Classes\AppUserModelId\com.dsh.desktop`) to make notifications work

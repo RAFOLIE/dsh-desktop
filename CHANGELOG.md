@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.4.0 — 2026-08-14
+
+启动链改为「本地优先、下载需确认」,并支持项目本地安装的 DSH。
+
+- 新增本地搜索:除 PATH 全局安装外,还按序搜索 exe 同目录、工作目录、用户目录下的 `node_modules\.bin\dsh.cmd`(覆盖 `pnpm add @deepseek-ai/dsh` 装在 exe 旁边/项目里的用法),命中后直接用它启动
+- 全部本地候选都不存在时不再静默走 npx 下载,启动页弹出选择:「下载并启动(首次约几分钟)」「重新检测」「退出」,并提示 `npm i -g @deepseek-ai/dsh` 一劳永逸
+- 选过「下载并启动」后记住选择(写在 `%LOCALAPPDATA%\dsh-desktop\settings.json`),下次冷启动自动把 npx 候选接到链尾,不再询问;本地候选命中时仍优先本地
+- 启动失败页新增「改用 npx 下载启动」兜底按钮
+
+Startup chain reworked: local-first, download only with consent — plus project-local DSH support.
+
+- Local search: besides a PATH-global install, `node_modules\.bin\dsh.cmd` is searched in the exe's directory, the working directory, then the user profile (covers `pnpm add @deepseek-ai/dsh` next to the exe or in a project); a hit is used directly
+- When no local candidate exists, the app no longer silently starts the npx download: the boot page offers "下载并启动 (download, ~minutes on first run)", "重新检测 (re-detect)" and "退出 (exit)", plus a hint that `npm i -g @deepseek-ai/dsh` removes the question permanently
+- The download choice persists (`%LOCALAPPDATA%\dsh-desktop\settings.json`): later cold starts append the npx candidate automatically without asking; local candidates still win when present
+- The error page gains a "改用 npx 下载启动" fallback button
+
 ## v1.3.0 — 2026-08-14
 
 托盘新增「重启 DSH」,无需退出应用再点桌面快捷方式。

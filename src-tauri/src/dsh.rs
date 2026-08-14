@@ -1,13 +1,15 @@
 //! DSH (DeepSeek Harness) lifecycle: readiness probe, spawn, teardown.
 //!
-//! Launch strategy — path-free, official CLI first:
+//! Launch strategy — local-first, download only on explicit consent:
 //!   1. `DSH_CMD` env override (optional `DSH_CWD`) replaces the whole chain;
 //!      for source-checkout development (`pnpm dsh web` in the repo).
-//!   2. `dsh web` — resolves a globally installed `dsh` from PATH (fastest;
-//!      a missing command exits immediately and falls through).
-//!   3. `npx @deepseek-ai/dsh web` — the official zero-install command
-//!      (harness README "Run from npm"); only needs Node.js. The first run may
-//!      download the package, so this candidate gets the long readiness window.
+//!   2. `dsh web` — a globally installed `dsh` found on PATH (npm/pnpm -g).
+//!   3. Project-local install — `node_modules\.bin\dsh.cmd` searched in the
+//!      exe's directory, the working directory, then the user profile.
+//!   4. `npx @deepseek-ai/dsh web` — downloads the package, so it runs
+//!      automatically only after the user picked "download" once (persisted
+//!      in settings.json); otherwise a "notfound" event asks the user to
+//!      choose download or exit.
 //! Each candidate has its own readiness window; early exit or timeout falls
 //! through to the next, and every attempt is logged to dsh.log and reported in
 //! the final error. The shell either *attaches* to a DSH already listening on
@@ -15,7 +17,7 @@
 //! on exit, an attached instance is left untouched.
 
 use std::fs::OpenOptions;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -84,8 +86,11 @@ struct Candidate {
     window: Duration,
 }
 
-/// Build the launch chain: `DSH_CMD` (with optional `DSH_CWD`) replaces it
-/// entirely; otherwise global `dsh` first, the official npx command second.
+/// Build the launch chain, local-first. `DSH_CMD` (with optional `DSH_CWD`)
+/// replaces it entirely. Otherwise: global `dsh` on PATH, then a project-local
+/// `node_modules\.bin\dsh.cmd`; the npx download joins only when the user has
+/// picked "download" before (persisted). An empty chain means "no local DSH" —
+/// startup reports `notfound` and the boot page asks the user.
 /// The default working directory is the user profile — a neutral, writable
 /// dir that never depends on a repo location. A stale `DSH_CWD` pointing at a
 /// deleted directory falls back to the profile dir instead of failing every
@@ -106,20 +111,97 @@ fn candidates() -> Vec<Candidate> {
             }];
         }
     }
-    vec![
-        Candidate {
+    let mut list = Vec::new();
+    if dsh_on_path() {
+        list.push(Candidate {
             label: "dsh web".to_string(),
             cmd: "dsh web".to_string(),
             cwd: cwd.clone(),
             window: GLOBAL_WINDOW,
-        },
-        Candidate {
-            label: "npx --yes @deepseek-ai/dsh web".to_string(),
-            cmd: "npx --yes @deepseek-ai/dsh web".to_string(),
-            cwd,
-            window: NPX_FIRST_RUN_WINDOW,
-        },
-    ]
+        });
+    }
+    if let Some((shim, root)) = find_local_install() {
+        list.push(Candidate {
+            label: format!("本地安装({})", root.display()),
+            cmd: format!("\"{}\" web", shim.display()),
+            cwd: root.display().to_string(),
+            window: GLOBAL_WINDOW,
+        });
+    }
+    if prefer_npx() {
+        list.push(npx_candidate(cwd));
+    }
+    list
+}
+
+/// The official zero-install command; its first run downloads 500+
+/// dependencies before booting.
+fn npx_candidate(cwd: String) -> Candidate {
+    Candidate {
+        label: "npx --yes @deepseek-ai/dsh web".to_string(),
+        cmd: "npx --yes @deepseek-ai/dsh web".to_string(),
+        cwd,
+        window: NPX_FIRST_RUN_WINDOW,
+    }
+}
+
+/// True if a `dsh` command (npm/pnpm global install) resolves on PATH.
+fn dsh_on_path() -> bool {
+    let mut command = Command::new("where");
+    command.arg("dsh");
+    apply_no_window(&mut command);
+    command.status().map(|s| s.success()).unwrap_or(false)
+}
+
+/// Directories searched for a project-local DSH install
+/// (`node_modules\.bin\dsh.cmd`), in order: next to the exe (the "download
+/// the exe, `pnpm add` beside it" setup), the working directory, then the
+/// user profile. Returns the shim and its owning root.
+fn find_local_install() -> Option<(PathBuf, PathBuf)> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            roots.push(dir.to_path_buf());
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        roots.push(cwd);
+    }
+    if let Ok(home) = std::env::var("USERPROFILE") {
+        let home = PathBuf::from(home);
+        if !roots.contains(&home) {
+            roots.push(home);
+        }
+    }
+    roots.into_iter().find_map(|root| {
+        let shim = root.join("node_modules").join(".bin").join("dsh.cmd");
+        shim.is_file().then_some((shim, root))
+    })
+}
+
+/// User preferences persisted beside dsh.log. Only `preferNpx` today: set
+/// once the user picks "download", so later cold starts run npx directly
+/// instead of asking again. Best-effort — an unreadable file just reads false.
+fn settings_path() -> PathBuf {
+    log_path()
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("settings.json")
+}
+
+fn prefer_npx() -> bool {
+    std::fs::read_to_string(settings_path())
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .and_then(|v| v.get("preferNpx").and_then(|x| x.as_bool()))
+        .unwrap_or(false)
+}
+
+fn save_prefer_npx(value: bool) {
+    let _ = std::fs::write(
+        settings_path(),
+        serde_json::to_string(&json!({ "preferNpx": value })).unwrap_or_default(),
+    );
 }
 
 /// Probe 3080 once with a real `host.describe` RPC; true if DSH answers healthy.
@@ -165,7 +247,14 @@ pub fn startup(app: AppHandle) {
     }
 
     let mut failures: Vec<String> = Vec::new();
-    for candidate in candidates() {
+    let chain = candidates();
+    // No local DSH and no consented download: hand the choice to the user
+    // instead of silently pulling 500+ dependencies.
+    if chain.is_empty() {
+        let _ = app.emit("dsh-status", json!({ "status": "notfound" }));
+        return;
+    }
+    for candidate in chain {
         let _ = app.emit(
             "dsh-status",
             json!({ "status": "starting", "method": candidate.label }),
@@ -228,6 +317,36 @@ pub fn retry(app: AppHandle) {
     teardown(&app);
     let app2 = app.clone();
     std::thread::spawn(move || startup(app2));
+}
+
+/// Frontend "下载并启动" after `notfound` (or as an error fallback): persist the
+/// consent so future cold starts include the npx candidate automatically, then
+/// run exactly that candidate now.
+pub fn download_and_start(app: AppHandle) {
+    save_prefer_npx(true);
+    teardown(&app);
+    let app2 = app.clone();
+    std::thread::spawn(move || {
+        let home = std::env::var("USERPROFILE").unwrap_or_else(|_| ".".to_string());
+        let cwd = std::env::var("DSH_CWD")
+            .ok()
+            .filter(|dir| Path::new(dir).is_dir())
+            .unwrap_or(home);
+        let candidate = npx_candidate(cwd);
+        let _ = app2.emit(
+            "dsh-status",
+            json!({ "status": "starting", "method": candidate.label }),
+        );
+        if let Attempt::Failed(reason) = try_candidate(&app2, &candidate) {
+            let _ = app2.emit(
+                "dsh-status",
+                json!({
+                    "status": "error",
+                    "message": format!("「{}」{}", candidate.label, reason),
+                }),
+            );
+        }
+    });
 }
 
 /// Tray "重启 DSH": hand the webview back to the boot page, kill whatever DSH
