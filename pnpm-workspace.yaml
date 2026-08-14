@@ -1,0 +1,5 @@
+# Standalone project: this file makes dsh-desktop its own workspace root so a
+# parent harness checkout never claims this app as a workspace member — a
+# nested pnpm-workspace.yaml is what stops `pnpm install` here from resolving
+# upward into the parent repo.
+packages: []

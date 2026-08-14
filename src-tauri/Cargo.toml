@@ -1,0 +1,41 @@
+[package]
+name = "dsh-desktop"
+version = "1.1.0"
+description = "DeepSeek Harness desktop shell"
+authors = ["RAFOLIE"]
+edition = "2021"
+
+[lib]
+# The `_lib` suffix avoids a name clash with the bin crate on Windows.
+# See https://github.com/rust-lang/cargo/issues/8519
+name = "dsh_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Plain-HTTP JSON client for the DSH readiness probe + session.list title lookup.
+# No TLS: we only ever talk to loopback 127.0.0.1:3080.
+ureq = { version = "2", features = ["json"] }
+# Blocking WebSocket client for the events.host stream; runs on its own thread.
+tungstenite = { version = "0.24", default-features = false, features = ["handshake"] }
+# Same http major as tungstenite 0.24 (1.x), unified by Cargo.
+http = "1"
+uuid = { version = "1", features = ["v4"] }
+# HKCU registry writes for the portable-exe toast identity (see lib.rs).
+winreg = "0.55"
+# Windows toast with action buttons + in-process click callback (see monitor.rs).
+tauri-winrt-notification = "0.7"
+
+[profile.release]
+# Size-first profile for a portable single-exe deliverable.
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

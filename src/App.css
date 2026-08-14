@@ -1,0 +1,83 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+.boot {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0f1115;
+  color: #e6e6e6;
+}
+
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 32px;
+  border-radius: 12px;
+  background: #171a21;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  min-width: 280px;
+}
+
+.text {
+  font-size: 15px;
+}
+
+.text.error {
+  color: #ff6b6b;
+  font-weight: 600;
+}
+
+.detail {
+  font-size: 13px;
+  color: #9aa0a6;
+  max-width: 320px;
+  text-align: center;
+  word-break: break-word;
+}
+
+button {
+  padding: 8px 20px;
+  font-size: 14px;
+  border: 1px solid #2c3140;
+  border-radius: 8px;
+  background: #1f6feb;
+  color: #fff;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #388bfd;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #2c3140;
+  border-top-color: #58a6ff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
