@@ -109,7 +109,7 @@ pub fn run() {
             // links, window.open from the link menu) is handed to the system
             // default browser instead of being silently denied by wry.
             let opener_app = app.handle().clone();
-            let main = tauri::WebviewWindowBuilder::new(
+            tauri::WebviewWindowBuilder::new(
                 app,
                 "main",
                 tauri::WebviewUrl::App("index.html".into()),
@@ -125,12 +125,21 @@ pub fn run() {
                 });
                 tauri::webview::NewWindowResponse::Deny
             })
+            // Capture the boot page's real URL when it finishes loading.
+            // Right after build the webview still sits on about:blank, so a
+            // build-time url() is unusable — tray "重启 DSH" needs the real
+            // URL to hand the window back to the boot page. First real page
+            // wins (OnceLock); the later webchat load cannot overwrite it.
+            .on_page_load(|_webview, payload| {
+                use tauri::webview::PageLoadEvent;
+                if payload.event() == PageLoadEvent::Finished {
+                    let url = payload.url().to_string();
+                    if !url.starts_with("about:") {
+                        let _ = dsh::BOOT_URL.set(url);
+                    }
+                }
+            })
             .build()?;
-            // Capture the boot page's URL before the webview ever leaves it —
-            // tray "重启 DSH" navigates back here to re-drive startup.
-            if let Ok(url) = main.url() {
-                let _ = dsh::BOOT_URL.set(url.to_string());
-            }
 
             let open = MenuItem::with_id(app, "open", "Open DSH", true, None::<&str>)?;
             let restart = MenuItem::with_id(app, "restart", "重启 DSH", true, None::<&str>)?;

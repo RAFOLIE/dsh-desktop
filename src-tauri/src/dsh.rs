@@ -364,8 +364,38 @@ pub fn restart(app: AppHandle) {
         while probe_ready_once() && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(500));
         }
-        startup(app);
+        startup(app.clone());
+        ensure_webchat_shown(&app);
     });
+}
+
+/// After a restart, the boot page normally hands the window to the fresh
+/// webchat on its `ready` listener. If that handoff is lost — the page load
+/// missed the event, or the captured boot URL was unusable — the window sits
+/// on a dead page while DSH is up. Poll briefly for the handoff, then force
+/// the navigation.
+fn ensure_webchat_shown(app: &AppHandle) {
+    if !probe_ready_once() {
+        return;
+    }
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let on_webchat = || {
+        window
+            .url()
+            .map(|u| u.host_str() == Some("127.0.0.1") && u.port() == Some(DSH_PORT))
+            .unwrap_or(false)
+    };
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !on_webchat() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    if !on_webchat() {
+        let _ = window.eval(&format!(
+            "window.location.replace('{DSH_BASE}/')"
+        ));
+    }
 }
 
 /// Navigate the webview (currently the remote webchat) back to the app's boot

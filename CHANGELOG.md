@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.4.2 — 2026-08-14
+
+修复:托盘「重启 DSH」后窗口未回到 webchat(DSH 本体重启成功,页面停在死页/空白页)。
+
+- 根因 1:boot 页 URL 在窗口构建完成时捕获,而此时 webview 还停在 `about:blank`,「回到启动页」导航到了空白页
+- 根因 2:启动页重新加载后若错过 `ready` 事件(页面加载慢于 DSH 启动),没人再驱动跳转,窗口永远停在转圈/死页
+- 修法 1:改用 `on_page_load` 在 boot 页真正加载完成时捕获 URL(首个真实页面胜出,dev 模式同样适用)
+- 修法 2:重启完成后轮询窗口 URL,DSH 已就绪而窗口 5 秒内未到 webchat 时,Rust 侧强制导航过去——任何一环掉链子都能兜住
+
+Fix: after tray "重启 DSH" the window never returned to the webchat (DSH itself restarted fine, the page sat dead/blank).
+
+- Cause 1: the boot URL was captured right after window build, when the webview still sat on `about:blank` — the "back to boot page" navigation went to a blank page
+- Cause 2: if the reloaded boot page missed the `ready` event (page load slower than DSH boot), nothing else drove the handoff and the window stayed stuck
+- Fix 1: capture the URL via `on_page_load` when the boot page actually finishes loading (first real page wins; works in dev too)
+- Fix 2: after restart, poll the window URL — if DSH is ready but the window hasn't reached the webchat within 5s, force the navigation from Rust
+
 ## v1.4.1 — 2026-08-14
 
 修复:本地安装候选在**路径含空格**时启动失败。
