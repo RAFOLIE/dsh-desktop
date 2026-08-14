@@ -95,7 +95,7 @@ pub fn run() {
             // links, window.open from the link menu) is handed to the system
             // default browser instead of being silently denied by wry.
             let opener_app = app.handle().clone();
-            tauri::WebviewWindowBuilder::new(
+            let main = tauri::WebviewWindowBuilder::new(
                 app,
                 "main",
                 tauri::WebviewUrl::App("index.html".into()),
@@ -112,10 +112,16 @@ pub fn run() {
                 tauri::webview::NewWindowResponse::Deny
             })
             .build()?;
+            // Capture the boot page's URL before the webview ever leaves it —
+            // tray "重启 DSH" navigates back here to re-drive startup.
+            if let Ok(url) = main.url() {
+                let _ = dsh::BOOT_URL.set(url.to_string());
+            }
 
             let open = MenuItem::with_id(app, "open", "Open DSH", true, None::<&str>)?;
+            let restart = MenuItem::with_id(app, "restart", "重启 DSH", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出(关闭 DSH)", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &quit])?;
+            let menu = Menu::with_items(app, &[&open, &restart, &quit])?;
 
             TrayIconBuilder::with_id("main-tray")
                 .icon(
@@ -129,6 +135,7 @@ pub fn run() {
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "open" => show_main_window(app),
+                    "restart" => dsh::restart(app.clone()),
                     "quit" => quit_dsh(app),
                     _ => {}
                 })

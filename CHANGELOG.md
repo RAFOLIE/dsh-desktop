@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.3.0 — 2026-08-14
+
+托盘新增「重启 DSH」,无需退出应用再点桌面快捷方式。
+
+- 托盘右键菜单新增「重启 DSH」:窗口回到启动页 → 杀掉 3080 上的 DSH 进程树(自己拉起的或附加的均处理)→ 等旧实例退出 → 重走启动候选链;会话数据在 `~/.dsh` 持久化,重启不丢失
+- 附加模式下通过 netstat 定位 3080 监听进程再整树查杀
+- 顺带修复:`DSH_CWD` 环境变量指向已删除目录时,候选全部失败并报「目录名称无效 (os error 267)」——现在回退到用户主目录,陈旧变量不再导致启动瘫痪
+- npx 首次安装的等待上限从 120 秒提高到 300 秒(实际首装 500+ 依赖可超过两分钟);启动页在走 npx 候选时提示「首次运行需下载 DSH 包,可能需要几分钟」
+- README 的 Node.js 版本要求从 ≥20 修正为 ^22.19 或 ≥ 24,与 DSH 源码声明一致
+
+Tray gains "重启 DSH" (Restart DSH) — no more quitting and re-launching from the desktop shortcut.
+
+- New tray menu item: the window returns to the boot page, the DSH process tree on 3080 is killed (spawned or attached alike), startup waits for the old instance to die, then re-runs the candidate chain; sessions live in `~/.dsh` and survive the restart
+- In attached mode the listener PID on 3080 is located via netstat and tree-killed
+- Also fixes: a stale `DSH_CWD` pointing at a deleted directory used to fail every candidate with "directory name invalid" (os error 267) — it now falls back to the user profile dir
+- The npx first-install readiness window is raised from 120s to 300s (a real first install of 500+ dependencies took over two minutes); the boot page now hints "first run downloads the DSH package and may take a few minutes" while the npx candidate is running
+- README's Node.js requirement corrected from ≥20 to ^22.19 or ≥ 24, matching what the DSH source declares
+
 ## v1.2.1 — 2026-08-14
 
 修复:链接的「在浏览器中打开」与左键点击外链未打开系统浏览器。

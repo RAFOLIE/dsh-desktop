@@ -49,6 +49,9 @@ function App() {
             正在启动 DSH…
             {status.method ? `(${status.method})` : ""}
           </div>
+          {status.method?.includes("npx") && (
+            <div className="detail">首次运行需下载 DSH 包,可能需要几分钟,请耐心等待</div>
+          )}
         </div>
       )}
 

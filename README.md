@@ -18,6 +18,7 @@ DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeSc
 
 - **开箱即用**:双击 exe 自动启动 DSH(`pnpm dsh web`),就绪后窗口直接打开 `http://127.0.0.1:3080/` 的**原生 webchat 界面**(不自创聊天 UI、不做反向代理)
 - **托盘常驻**:关闭窗口(X)只是隐藏到托盘,DSH 后台继续运行;**双击托盘图标**或**右键 → Open DSH** 随时唤回窗口
+- **一键重启 DSH**:托盘右键 → 「重启 DSH」即可完整重启 DSH 服务(杀掉 3080 进程树并重新拉起),无需退出应用再点桌面快捷方式;会话数据在 `~/.dsh` 持久化,不丢失
 - **任务完成通知**:会话从运行中转为空闲时弹 Windows 系统通知,带两个按钮——**「打开窗口」**(复现并聚焦窗口)和**「明白」**(收起通知);不点击则数秒后自动收起
 - **链接右键菜单**:在聊天里的链接上右键,显示简洁菜单「在浏览器中打开」/「复制链接」(替换误导性的 WebView2 默认菜单);左键点击外链仍由系统默认浏览器打开
 - **附加模式**:启动时若 3080 已有 DSH 在跑,直接连接不重复拉起;退出时也**不会动**别人(先于应用存在)的实例
@@ -32,7 +33,7 @@ DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeSc
 
 | 项 | 要求 |
 |---|---|
-| Node.js | ≥ 20(**必须**) |
+| Node.js | ^22.19 或 ≥ 24(**必须**;DSH 的 Node 版本要求) |
 | DSH | 可选:全局安装 `npm i -g @deepseek-ai/dsh`(启动最快);未安装则自动走内置的 `npx @deepseek-ai/dsh web` |
 | 从源码跑 DSH 的开发者 | 设 `DSH_CMD`(`pnpm dsh web`)与 `DSH_CWD`(DSH 仓库路径)环境变量 |
 | WebView2 | Windows 11 自带 |
@@ -42,7 +43,7 @@ DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeSc
 1. 解压 zip,双击 `dsh-desktop-windowos.exe`。**首次运行 Windows SmartScreen 可能拦截(exe 未签名)**:点「更多信息 → 仍要运行」即可
 2. 机器满足以下任一状态,双击后自动进入 webchat:
    - **已有 DSH 在跑**(如自己开过 `dsh web`)→ 自动附加,直接使用,无需 Node 在 PATH
-   - **已装 Node.js ≥ 20** → 自动经 `npx --yes @deepseek-ai/dsh web` 拉起官方 DSH(首次含包下载,稍慢;若超时点「重试」,已下载部分有缓存)
+   - **已装 Node.js(^22.19 或 ≥ 24)** → 自动经 `npx --yes @deepseek-ai/dsh web` 拉起官方 DSH(首次含包下载,可能需要几分钟;若超时点「重试」,已下载部分有缓存)
    - **推荐**:`npm i -g @deepseek-ai/dsh` 全局安装后启动最快,且启动时无需网络
 3. 若 Node 与 DSH 均未安装:壳窗口能打开,但 DSH 无法启动,页面会列出每种启动方式的具体失败原因
 
@@ -85,6 +86,7 @@ Ships as a **single portable bare exe** (~4.5 MB, no installer).
 
 - **Zero-setup**: double-click the exe and it starts DSH (`pnpm dsh web`); once ready, the window opens the **native webchat** at `http://127.0.0.1:3080/` (no custom chat UI, no reverse proxy)
 - **Tray-resident**: closing the window (X) only hides it to the tray while DSH keeps running; **double-click the tray icon** or **right-click → Open DSH** brings the window back
+- **One-click DSH restart**: tray right-click → "重启 DSH" fully restarts the DSH service (kills the process tree on 3080 and starts it again) — no need to quit and re-launch from the desktop shortcut; sessions persist in `~/.dsh`
 - **Task-done notification**: when a session transitions from running to idle, a Windows toast fires with two buttons — **"Open Window"** (restore & focus) and **"Got it"** (dismiss); left untouched it auto-collapses after a few seconds
 - **Link context menu**: right-clicking a link in the chat shows a clean two-item menu — "Open in browser" / "Copy link" (replacing the misleading default WebView2 menu); left-click still opens external links in the system default browser
 - **Attach mode**: if DSH is already listening on 3080 at startup, the app attaches instead of spawning a second one — and never kills an instance it didn't start
@@ -99,7 +101,7 @@ Not bundled with the exe:
 
 | Item | Requirement |
 |---|---|
-| Node.js | ≥ 20 (**required**) |
+| Node.js | ^22.19 or ≥ 24 (**required**; the Node version DSH declares) |
 | DSH | optional: global install `npm i -g @deepseek-ai/dsh` (fastest launch); otherwise the built-in `npx @deepseek-ai/dsh web` is used automatically |
 | Running DSH from source | set the `DSH_CMD` (`pnpm dsh web`) and `DSH_CWD` (DSH repo path) env vars |
 | WebView2 | included with Windows 11 |
@@ -109,7 +111,7 @@ Not bundled with the exe:
 1. Unzip and double-click `dsh-desktop-windowos.exe`. **Windows SmartScreen may warn on first run (the exe is unsigned)**: click "More info → Run anyway"
 2. Any of these machine states works — the app auto-enters the webchat after launch:
    - **DSH already running** (e.g. you started `dsh web` yourself) → auto-attach, works immediately, no Node needed on PATH
-   - **Node.js ≥ 20 installed** → DSH is auto-started via `npx --yes @deepseek-ai/dsh web` (first run downloads the package; if it times out, hit "重试" (retry) — completed downloads are cached)
+   - **Node.js ^22.19 or ≥ 24 installed** → DSH is auto-started via `npx --yes @deepseek-ai/dsh web` (the first run downloads the package and can take a few minutes; if it times out, hit "重试" (retry) — completed downloads are cached)
    - **Recommended**: `npm i -g @deepseek-ai/dsh` for the fastest launch with no network needed at startup
 3. With neither Node nor DSH installed: the shell window opens, but DSH cannot start — the boot page lists the specific failure reason of each launch method
 

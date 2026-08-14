@@ -15,8 +15,9 @@
 //! on exit, an attached instance is left untouched.
 
 use std::fs::OpenOptions;
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -26,9 +27,12 @@ use uuid::Uuid;
 const DSH_ORIGIN: &str = "http://127.0.0.1:3080";
 const DSH_BASE: &str = "http://127.0.0.1:3080";
 
-/// Overall readiness window for a single-command chain (DSH_CMD) and for the
-/// npx candidate, whose first run downloads the package before booting.
-const LONG_WINDOW: Duration = Duration::from_secs(120);
+/// Readiness window for the single-command `DSH_CMD` chain.
+const DSH_CMD_WINDOW: Duration = Duration::from_secs(120);
+/// Readiness window for the npx candidate: its first run downloads the full
+/// package (500+ dependencies) before booting, which took over two minutes
+/// in practice — five minutes leaves headroom for slow links.
+const NPX_FIRST_RUN_WINDOW: Duration = Duration::from_secs(300);
 /// Window for the global-`dsh` candidate: boot is fast, and a missing command
 /// exits immediately instead of consuming the window.
 const GLOBAL_WINDOW: Duration = Duration::from_secs(30);
@@ -37,6 +41,15 @@ const PROBE_INTERVAL: Duration = Duration::from_secs(1);
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Local port the DSH web server listens on; also the anchor for finding an
+/// attached instance's PID at restart time.
+const DSH_PORT: u16 = 3080;
+
+/// Boot-page URL captured at window build. Restart hands the webview back to
+/// this page so the standard `dsh-status` event flow re-drives the handoff to
+/// the fresh webchat, exactly like a cold start.
+pub(crate) static BOOT_URL: OnceLock<String> = OnceLock::new();
 
 /// A DSH subprocess we spawned (and therefore own the lifecycle of).
 struct DshInner {
@@ -74,21 +87,25 @@ struct Candidate {
 /// Build the launch chain: `DSH_CMD` (with optional `DSH_CWD`) replaces it
 /// entirely; otherwise global `dsh` first, the official npx command second.
 /// The default working directory is the user profile — a neutral, writable
-/// dir that never depends on a repo location.
+/// dir that never depends on a repo location. A stale `DSH_CWD` pointing at a
+/// deleted directory falls back to the profile dir instead of failing every
+/// spawn with "directory name invalid" (os error 267).
 fn candidates() -> Vec<Candidate> {
     let home = std::env::var("USERPROFILE").unwrap_or_else(|_| ".".to_string());
+    let cwd = std::env::var("DSH_CWD")
+        .ok()
+        .filter(|dir| Path::new(dir).is_dir())
+        .unwrap_or_else(|| home.clone());
     if let Ok(cmd) = std::env::var("DSH_CMD") {
         if !cmd.trim().is_empty() {
-            let cwd = std::env::var("DSH_CWD").unwrap_or(home);
             return vec![Candidate {
                 label: "DSH_CMD".to_string(),
                 cmd,
                 cwd,
-                window: LONG_WINDOW,
+                window: DSH_CMD_WINDOW,
             }];
         }
     }
-    let cwd = std::env::var("DSH_CWD").unwrap_or(home);
     vec![
         Candidate {
             label: "dsh web".to_string(),
@@ -100,7 +117,7 @@ fn candidates() -> Vec<Candidate> {
             label: "npx --yes @deepseek-ai/dsh web".to_string(),
             cmd: "npx --yes @deepseek-ai/dsh web".to_string(),
             cwd,
-            window: LONG_WINDOW,
+            window: NPX_FIRST_RUN_WINDOW,
         },
     ]
 }
@@ -211,6 +228,60 @@ pub fn retry(app: AppHandle) {
     teardown(&app);
     let app2 = app.clone();
     std::thread::spawn(move || startup(app2));
+}
+
+/// Tray "重启 DSH": hand the webview back to the boot page, kill whatever DSH
+/// is on the port (owned *or* attached), wait out its death, then run the
+/// normal startup chain — the boot page re-drives the webchat handoff from
+/// there. Sessions are durable in `~/.dsh`, so nothing is lost.
+pub fn restart(app: AppHandle) {
+    std::thread::spawn(move || {
+        show_boot_page(&app);
+        teardown(&app);
+        kill_port_listeners();
+        // Wait for the old instance to stop answering so startup's attach
+        // probe cannot latch onto the dying server and report ready.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while probe_ready_once() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        startup(app);
+    });
+}
+
+/// Navigate the webview (currently the remote webchat) back to the app's boot
+/// page, whose `dsh-status` listener takes over from here.
+fn show_boot_page(app: &AppHandle) {
+    if let (Some(url), Some(window)) = (BOOT_URL.get(), app.get_webview_window("main")) {
+        let js = format!("window.location.replace('{}')", url.replace('\'', "\\'"));
+        let _ = window.eval(&js);
+    }
+}
+
+/// Kill any process still listening on the DSH port: an attached instance we
+/// never spawned, or a straggler the owned-tree taskkill missed. Locale-safe:
+/// matches the numeric local-address column, not the state text.
+fn kill_port_listeners() {
+    let mut command = Command::new("netstat");
+    command.args(["-ano", "-p", "tcp"]);
+    apply_no_window(&mut command);
+    let Ok(output) = command.output() else {
+        return;
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let suffix = format!(":{DSH_PORT}");
+    for line in text.lines() {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() >= 5
+            && fields[0] == "TCP"
+            && fields[1].ends_with(&suffix)
+            && fields[4] != "0"
+        {
+            if let Ok(pid) = fields[4].parse::<u32>() {
+                kill_tree(pid);
+            }
+        }
+    }
 }
 
 /// Tear down the owned subprocess tree (if we spawned one). Safe to call from
