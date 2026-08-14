@@ -354,6 +354,9 @@ pub fn download_and_start(app: AppHandle) {
 /// normal startup chain — the boot page re-drives the webchat handoff from
 /// there. Sessions are durable in `~/.dsh`, so nothing is lost.
 pub fn restart(app: AppHandle) {
+    // Pop the window first so a restart triggered while hidden in the tray is
+    // visibly underway instead of looking like a no-op.
+    crate::show_main_window(&app);
     std::thread::spawn(move || {
         show_boot_page(&app);
         teardown(&app);

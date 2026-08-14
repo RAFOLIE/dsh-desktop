@@ -8,6 +8,7 @@
 - 根因 2:启动页重新加载后若错过 `ready` 事件(页面加载慢于 DSH 启动),没人再驱动跳转,窗口永远停在转圈/死页
 - 修法 1:改用 `on_page_load` 在 boot 页真正加载完成时捕获 URL(首个真实页面胜出,dev 模式同样适用)
 - 修法 2:重启完成后轮询窗口 URL,DSH 已就绪而窗口 5 秒内未到 webchat 时,Rust 侧强制导航过去——任何一环掉链子都能兜住
+- 体验:点击「重启 DSH」立即弹出并聚焦主窗口(原先窗口藏在托盘时重启毫无可见反馈)
 
 Fix: after tray "重启 DSH" the window never returned to the webchat (DSH itself restarted fine, the page sat dead/blank).
 
@@ -15,6 +16,7 @@ Fix: after tray "重启 DSH" the window never returned to the webchat (DSH itsel
 - Cause 2: if the reloaded boot page missed the `ready` event (page load slower than DSH boot), nothing else drove the handoff and the window stayed stuck
 - Fix 1: capture the URL via `on_page_load` when the boot page actually finishes loading (first real page wins; works in dev too)
 - Fix 2: after restart, poll the window URL — if DSH is ready but the window hasn't reached the webchat within 5s, force the navigation from Rust
+- UX: clicking "重启 DSH" now shows and focuses the main window immediately (a restart triggered while hidden in the tray used to give no visible feedback)
 
 ## v1.4.1 — 2026-08-14
 
