@@ -1,0 +1,5 @@
+# dsh-desktop-plugin bundle patch: mount the plugin under its package name,
+# resolved through the profile's node_modules when listed in dsh.profile.bundles.
+- insert:
+    - id: dsh-desktop-plugin
+      name: dsh-desktop-plugin

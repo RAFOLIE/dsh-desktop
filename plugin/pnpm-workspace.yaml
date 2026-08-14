@@ -1,0 +1,3 @@
+# Standalone plugin package: this file keeps `pnpm install` here from
+# resolving upward into the Tauri app repo's workspace root.
+packages: []

@@ -42,6 +42,16 @@ DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeSc
 
 ### 快速开始
 
+**方式一:装 DSH 插件(推荐给 DSH 用户)**
+
+```sh
+dsh plugin --profile web add github:RAFOLIE/dsh-desktop-windowos#path:/plugin
+```
+
+重启 DSH 后插件自动把 exe 装到 `%LOCALAPPDATA%\Programs\dsh-desktop-windowos\` 并在桌面生成快捷方式「DeepSeek Harness」;对话里说“打开桌面应用”还能通过 `desktop_launch` 工具直接拉起。详见 [plugin/README.md](plugin/README.md)。
+
+**方式二:直接下载 exe**
+
 1. 从 [Releases](https://github.com/RAFOLIE/dsh-desktop-windowos/releases) 下载 `dsh-desktop-windowos-v<版本>.exe`,双击运行(免安装单文件,无需解压)。**首次运行 Windows SmartScreen 可能拦截(exe 未签名)**:点「更多信息 → 仍要运行」即可
 2. 机器满足以下任一状态,双击后自动进入 webchat:
    - **已有 DSH 在跑**(如自己开过 `dsh web`)→ 自动附加,直接使用,无需 Node 在 PATH
@@ -112,6 +122,16 @@ Not bundled with the exe:
 | WebView2 | included with Windows 11 |
 
 ### Quick Start
+
+**Option A: install the DSH plugin (recommended for DSH users)**
+
+```sh
+dsh plugin --profile web add github:RAFOLIE/dsh-desktop-windowos#path:/plugin
+```
+
+After restarting DSH, the plugin auto-installs the exe into `%LOCALAPPDATA%\Programs\dsh-desktop-windowos` and creates the desktop shortcut "DeepSeek Harness"; saying "open the desktop app" in chat launches it via the `desktop_launch` tool. See [plugin/README.md](plugin/README.md).
+
+**Option B: download the exe directly**
 
 1. Download `dsh-desktop-windowos-v<version>.exe` from [Releases](https://github.com/RAFOLIE/dsh-desktop-windowos/releases) and double-click it (single portable file, no unzip needed). **Windows SmartScreen may warn on first run (the exe is unsigned)**: click "More info → Run anyway"
 2. Any of these machine states works — the app auto-enters the webchat after launch:
