@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.2.1 — 2026-08-14
+
+修复:链接的「在浏览器中打开」与左键点击外链未打开系统浏览器。
+
+- 根因:WebView2 新窗口请求在未注册处理器时被 wry 静默拒绝
+- 主窗口改为 Rust 侧创建并注册 `on_new_window` 处理器:所有新窗口请求(target=_blank 链接、菜单的 window.open)经 opener 插件交给系统默认浏览器打开
+- 行为现在确定一致:菜单「在浏览器中打开」、左键点外链均打开系统默认浏览器
+
+Fix: "Open in browser" on links and left-click on external links did nothing.
+
+- Root cause: WebView2 new-window requests are silently denied by wry when no handler is registered
+- The main window is now created in Rust with an `on_new_window` handler: every new-window request (target=_blank links, the menu's window.open) is handed to the system default browser via the opener plugin
+- Behavior is now deterministic: both the menu item and left-click open the system default browser
+
 ## v1.2.0 — 2026-08-14
 
 链接右键菜单重做。

@@ -83,11 +83,35 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main_window(app);
         }))
+        .plugin(tauri_plugin_opener::init())
         .manage(dsh::DshState::new())
         .invoke_handler(tauri::generate_handler![dsh_retry])
         .setup(|app| {
             #[cfg(windows)]
             ensure_toast_aumid();
+
+            // The window is built here (not in tauri.conf.json) so it can carry
+            // a new-window handler: every new-window request (target=_blank
+            // links, window.open from the link menu) is handed to the system
+            // default browser instead of being silently denied by wry.
+            let opener_app = app.handle().clone();
+            tauri::WebviewWindowBuilder::new(
+                app,
+                "main",
+                tauri::WebviewUrl::App("index.html".into()),
+            )
+            .title("DeepSeek Harness")
+            .inner_size(1280.0, 800.0)
+            .on_new_window(move |url, _features| {
+                let app = opener_app.clone();
+                let url = url.to_string();
+                tauri::async_runtime::spawn(async move {
+                    use tauri_plugin_opener::OpenerExt;
+                    let _ = app.opener().open_url(url, None::<&str>);
+                });
+                tauri::webview::NewWindowResponse::Deny
+            })
+            .build()?;
 
             let open = MenuItem::with_id(app, "open", "Open DSH", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出(关闭 DSH)", true, None::<&str>)?;
