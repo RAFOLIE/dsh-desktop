@@ -32,6 +32,15 @@ DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeSc
 | 从源码跑 DSH 的开发者 | 设 `DSH_CMD`(`pnpm dsh web`)与 `DSH_CWD`(DSH 仓库路径)环境变量 |
 | WebView2 | Windows 11 自带 |
 
+### 快速开始
+
+1. 解压 zip,双击 `dsh-desktop.exe`。**首次运行 Windows SmartScreen 可能拦截(exe 未签名)**:点「更多信息 → 仍要运行」即可
+2. 机器满足以下任一状态,双击后自动进入 webchat:
+   - **已有 DSH 在跑**(如自己开过 `dsh web`)→ 自动附加,直接使用,无需 Node 在 PATH
+   - **已装 Node.js ≥ 20** → 自动经 `npx --yes @deepseek-ai/dsh web` 拉起官方 DSH(首次含包下载,稍慢;若超时点「重试」,已下载部分有缓存)
+   - **推荐**:`npm i -g @deepseek-ai/dsh` 全局安装后启动最快,且启动时无需网络
+3. 若 Node 与 DSH 均未安装:壳窗口能打开,但 DSH 无法启动,页面会列出每种启动方式的具体失败原因
+
 ### 构建前提(Windows)
 
 - Rust msvc 工具链 + VS 2022 生成工具("MSVC v143 C++ 生成工具" + Windows 11 SDK)
@@ -88,6 +97,15 @@ Not bundled with the exe:
 | DSH | optional: global install `npm i -g @deepseek-ai/dsh` (fastest launch); otherwise the built-in `npx @deepseek-ai/dsh web` is used automatically |
 | Running DSH from source | set the `DSH_CMD` (`pnpm dsh web`) and `DSH_CWD` (DSH repo path) env vars |
 | WebView2 | included with Windows 11 |
+
+### Quick Start
+
+1. Unzip and double-click `dsh-desktop.exe`. **Windows SmartScreen may warn on first run (the exe is unsigned)**: click "More info → Run anyway"
+2. Any of these machine states works — the app auto-enters the webchat after launch:
+   - **DSH already running** (e.g. you started `dsh web` yourself) → auto-attach, works immediately, no Node needed on PATH
+   - **Node.js ≥ 20 installed** → DSH is auto-started via `npx --yes @deepseek-ai/dsh web` (first run downloads the package; if it times out, hit "重试" (retry) — completed downloads are cached)
+   - **Recommended**: `npm i -g @deepseek-ai/dsh` for the fastest launch with no network needed at startup
+3. With neither Node nor DSH installed: the shell window opens, but DSH cannot start — the boot page lists the specific failure reason of each launch method
 
 ### Building (Windows)
 
