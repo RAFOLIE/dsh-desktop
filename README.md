@@ -21,13 +21,14 @@ DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeSc
 - **开箱即用**:双击 exe 自动启动 DSH(`pnpm dsh web`),就绪后窗口直接打开 `http://127.0.0.1:3080/` 的**原生 webchat 界面**(不自创聊天 UI、不做反向代理)
 - **托盘常驻**:关闭窗口(X)只是隐藏到托盘,DSH 后台继续运行;**双击托盘图标**或**右键 → Open DSH** 随时唤回窗口
 - **一键重启 DSH**:托盘右键 → 「重启 DSH」即可完整重启 DSH 服务(杀掉 3080 进程树并重新拉起),无需退出应用再点桌面快捷方式;会话数据在 `~/.dsh` 持久化,不丢失
+- **托盘图标固定任务栏**:启动时自动写入 Windows 通知区域设置(`IsPromoted`),图标不再每次被收进任务栏角溢出
 - **任务完成通知**:会话从运行中转为空闲时弹 Windows 系统通知,带两个按钮——**「打开窗口」**(复现并聚焦窗口)和**「明白」**(收起通知);不点击则数秒后自动收起
 - **链接右键菜单**:在聊天里的链接上右键,显示简洁菜单「在浏览器中打开」/「复制链接」(替换误导性的 WebView2 默认菜单);左键点击外链仍由系统默认浏览器打开
 - **附加模式**:启动时若 3080 已有 DSH 在跑,直接连接不重复拉起;退出时也**不会动**别人(先于应用存在)的实例
 - **干净退出**:仅托盘右键 → 「退出(关闭 DSH)」才真正退出,自动 `taskkill /T` 杀掉自己拉起的整棵进程树,零孤儿进程
 - **防重复实例**:exe 被再次双击只会唤回已有窗口,不会开第二个
 - **便携小巧**:单文件、无安装器、无 DLL 依赖,数据/日志写在 `%LOCALAPPDATA%\dsh-desktop\`
-- **本地优先启动,下载需确认**:按候选链自动启动 DSH——PATH 全局安装的 `dsh web` → 项目本地 `node_modules\.bin\dsh.cmd`(exe 同目录/工作目录/用户目录,覆盖 `pnpm add` 本地安装)→ 已确认过的 npx 下载;全都找不到时**弹窗让你选**下载/重新检测/退出,不会静默下载几百 MB 依赖。源码开发者可用环境变量 `DSH_CMD` / `DSH_CWD` 完全自定义启动命令
+- **本地优先启动,npm 全局为主推荐**:按候选链自动启动 DSH——`DSH_CMD` 环境变量(失败自动降级,不再卡死)→ 自定义路径(启动页可填,永久记住)→ PATH 全局安装的 `dsh web` → 项目本地 `node_modules\.bin\dsh.cmd`(exe 同目录/工作目录/用户目录)→ 已确认过的 npx;全都找不到时启动页提供**一键全局安装**(应用直接执行 `npm install -g @deepseek-ai/dsh`,约 1-3 分钟,装完永久走最快路径、终端获得 `dsh` 命令)、npx 下载(备选)、手动填路径、重新检测、退出——不会静默下载任何东西
 
 ### 前提条件
 
@@ -48,7 +49,7 @@ DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeSc
 dsh plugin --profile web add dsh-desktop-plugin
 ```
 
-重启 DSH 后插件自动把 exe 装到 `%LOCALAPPDATA%\Programs\dsh-desktop-windowos\`,并在桌面生成**两个**快捷方式——「DeepSeek Harness」(桌面应用)和「DeepSeek Harness Web」(浏览器打开前端);之后每次激活还会**自动升级** exe 到最新 Release(应用运行中也能安全替换)。对话里说“打开桌面应用”可通过 `desktop_launch` 工具直接拉起。首次运行 exe 会弹 SmartScreen(未签名),点「更多信息 → 仍要运行」即可。**插件与应用共用同一条版本线**(插件 1.4.2 = 应用 v1.4.2)。详见 [plugin/README.md](plugin/README.md)。
+重启 DSH 后插件自动把 exe 装到 `%LOCALAPPDATA%\Programs\dsh-desktop-windowos\`,并在桌面生成**两个**快捷方式——「DeepSeek Harness」(桌面应用)和「DeepSeek Harness Web」(浏览器打开前端);之后每次激活还会**自动升级** exe 到最新 Release(应用运行中也能安全替换)。对话里说“打开桌面应用”可通过 `desktop_launch` 工具直接拉起。首次运行 exe 会弹 SmartScreen(未签名),点「更多信息 → 仍要运行」即可。**插件与应用共用同一条版本线**(插件 1.4.5 = 应用 v1.4.5)。详见 [plugin/README.md](plugin/README.md)。
 
 **方式二:直接下载 exe**
 
@@ -58,7 +59,7 @@ dsh plugin --profile web add dsh-desktop-plugin
    - **全局装了 DSH**(`npm i -g @deepseek-ai/dsh`,**推荐**)→ 启动最快,无需网络
    - **本地装了 DSH**(在 exe 同目录、工作目录或用户目录 `pnpm add @deepseek-ai/dsh`)→ 自动发现 `node_modules\.bin\dsh.cmd` 并使用
    - **之前选过「下载并启动」** → 自动经 `npx --yes @deepseek-ai/dsh web` 拉起(首选项记录在 `%LOCALAPPDATA%\dsh-desktop\settings.json`)
-3. 若本地没有任何 DSH:启动页弹出选择——**「下载并启动」**(首次下载约几分钟,之后走缓存)/「重新检测」/「退出」,不会未经同意就开始下载;需 Node.js(^22.19 或 ≥ 24)
+3. 若本地没有任何 DSH:启动页提供选择——**「一键全局安装并启动(推荐)」**(应用直接执行 `npm install -g @deepseek-ai/dsh`,约 1-3 分钟)/「下载并启动(npx,备选)」/粘贴已知 `dsh.cmd` 路径/「重新检测」/「退出」,不会未经同意就下载;需 Node.js(^22.19 或 ≥ 24)
 
 ### 构建前提(Windows)
 
@@ -72,7 +73,7 @@ pnpm tauri build    # 产物:src-tauri\target\release\dsh-desktop-windowos.exe
 
 ### 工作原理
 
-- Rust 侧以 `POST /api/host.describe` 探测就绪(`result.ok === true` 即就绪);启动走本地优先候选链:`DSH_CMD` 环境变量 → `dsh web`(PATH 全局)→ `node_modules\.bin\dsh.cmd`(exe 同目录/工作目录/用户目录)→ 已确认过的 `npx --yes @deepseek-ai/dsh web`(首选项持久化在 `%LOCALAPPDATA%\dsh-desktop\settings.json`),链空则发 `notfound` 事件由启动页让用户选;每个候选独立就绪窗口,失败自动降级并在日志/错误信息中记录每次尝试;子进程经 `cmd /C` 拉起(加 `CREATE_NO_WINDOW`,stdout/stderr 写日志)
+- Rust 侧以 `POST /api/host.describe` 探测就绪(`result.ok === true` 即就绪);启动走本地优先候选链:`DSH_CMD` 环境变量(首个候选,失败自动降级)→ 自定义路径(启动页输入,持久化在 `settings.json`)→ `dsh web`(PATH 全局,经 `where dsh` 检查)→ `node_modules\.bin\dsh.cmd`(exe 同目录/工作目录/用户目录)→ 已确认过的 `npx --yes @deepseek-ai/dsh web`;链空则发 `notfound` 事件,启动页提供一键 `npm install -g`(应用代跑)、npx 备选、路径输入等选项;每个候选独立就绪窗口,失败自动降级并在日志/错误信息中记录每次尝试;子进程经 `cmd /S /C` 拉起(加 `CREATE_NO_WINDOW`,stdout/stderr 写日志)
 - 监听 `ws://127.0.0.1:3080/api/events.host`,在 `host/session-status` 的 `running` 出现 **true→false 边沿**且主窗口隐藏时,经 `session.list` 取会话标题弹通知
 - 裸 exe 无安装器,Windows 会静默吞 Toast——应用启动时自动在注册表注册 AppUserModelID(`HKCU\Software\Classes\AppUserModelId\com.dsh.desktop`)保证通知可达
 
@@ -103,13 +104,14 @@ Ships as a **single portable bare exe** (~4.4 MB, no installer).
 - **Zero-setup**: double-click the exe and it starts DSH (`pnpm dsh web`); once ready, the window opens the **native webchat** at `http://127.0.0.1:3080/` (no custom chat UI, no reverse proxy)
 - **Tray-resident**: closing the window (X) only hides it to the tray while DSH keeps running; **double-click the tray icon** or **right-click → Open DSH** brings the window back
 - **One-click DSH restart**: tray right-click → "重启 DSH" fully restarts the DSH service (kills the process tree on 3080 and starts it again) — no need to quit and re-launch from the desktop shortcut; sessions persist in `~/.dsh`
+- **Tray icon pinned to the taskbar**: the app writes the Windows notification-area setting (`IsPromoted`) at startup, so the icon no longer falls into the overflow on every launch
 - **Task-done notification**: when a session transitions from running to idle, a Windows toast fires with two buttons — **"Open Window"** (restore & focus) and **"Got it"** (dismiss); left untouched it auto-collapses after a few seconds
 - **Link context menu**: right-clicking a link in the chat shows a clean two-item menu — "Open in browser" / "Copy link" (replacing the misleading default WebView2 menu); left-click still opens external links in the system default browser
 - **Attach mode**: if DSH is already listening on 3080 at startup, the app attaches instead of spawning a second one — and never kills an instance it didn't start
 - **Clean exit**: only tray right-click → "Quit (close DSH)" exits, tearing down the process tree it spawned via `taskkill /T` with zero orphans
 - **Single instance**: launching the exe again just focuses the existing window
 - **Portable & small**: one file, no installer, no DLL dependencies; data/logs go to `%LOCALAPPDATA%\dsh-desktop\`
-- **Local-first launch, download with consent**: starts DSH via a candidate chain — PATH-global `dsh web` → project-local `node_modules\.bin\dsh.cmd` (exe dir / working dir / user profile, covering `pnpm add` local installs) → a previously consented npx download; when nothing local exists the boot page **asks** download / re-detect / exit instead of silently pulling hundreds of MB. Source developers can fully customize via the `DSH_CMD` / `DSH_CWD` env vars
+- **Local-first launch, global npm as the primary recommendation**: starts DSH via a candidate chain — `DSH_CMD` env var (falls through on failure instead of stalling) → a custom path entered on the boot page (remembered) → PATH-global `dsh web` → project-local `node_modules\.bin\dsh.cmd` → a previously consented npx; when nothing local exists the boot page offers a **one-click global install** (the app runs `npm install -g @deepseek-ai/dsh` for you, ~1-3 min, permanently on the fast path with a terminal `dsh` command), the npx download as fallback, a manual path input, re-detect, and exit — nothing downloads silently
 
 ### Prerequisites (target machine)
 
@@ -130,7 +132,7 @@ Not bundled with the exe:
 dsh plugin --profile web add dsh-desktop-plugin
 ```
 
-After restarting DSH, the plugin auto-installs the exe into `%LOCALAPPDATA%\Programs\dsh-desktop-windowos` and creates **two** desktop shortcuts — "DeepSeek Harness" (the desktop app) and "DeepSeek Harness Web" (the web UI in a browser); each later activation also **auto-updates** the exe to the latest Release (safe even while the app is running). Saying "open the desktop app" in chat launches it via the `desktop_launch` tool. First run of the unsigned exe shows SmartScreen — click "More info → Run anyway". **The plugin shares one version line with the app** (plugin 1.4.2 = app v1.4.2). See [plugin/README.md](plugin/README.md).
+After restarting DSH, the plugin auto-installs the exe into `%LOCALAPPDATA%\Programs\dsh-desktop-windowos` and creates **two** desktop shortcuts — "DeepSeek Harness" (the desktop app) and "DeepSeek Harness Web" (the web UI in a browser); each later activation also **auto-updates** the exe to the latest Release (safe even while the app is running). Saying "open the desktop app" in chat launches it via the `desktop_launch` tool. First run of the unsigned exe shows SmartScreen — click "More info → Run anyway". **The plugin shares one version line with the app** (plugin 1.4.5 = app v1.4.5). See [plugin/README.md](plugin/README.md).
 
 **Option B: download the exe directly**
 
@@ -140,7 +142,7 @@ After restarting DSH, the plugin auto-installs the exe into `%LOCALAPPDATA%\Prog
    - **DSH installed globally** (`npm i -g @deepseek-ai/dsh`, **recommended**) → fastest launch, no network needed
    - **DSH installed locally** (`pnpm add @deepseek-ai/dsh` beside the exe, in the working dir, or the user profile) → `node_modules\.bin\dsh.cmd` is discovered and used
    - **"Download" picked before** → DSH auto-starts via `npx --yes @deepseek-ai/dsh web` (choice persisted in `%LOCALAPPDATA%\dsh-desktop\settings.json`)
-3. With no local DSH at all: the boot page offers a choice — **"下载并启动" (download & start, first run takes a few minutes)** / "重新检测" (re-detect) / "退出" (exit). Nothing downloads without consent; Node.js ^22.19 or ≥ 24 is required for the npx path
+3. With no local DSH at all: the boot page offers — **"一键全局安装并启动" (one-click global install, recommended; the app runs `npm install -g @deepseek-ai/dsh` itself, ~1-3 min)** / "下载并启动" (npx fallback) / paste a known `dsh.cmd` path / "重新检测" (re-detect) / "退出" (exit). Nothing downloads without consent; Node.js ^22.19 or ≥ 24 is required
 
 ### Building (Windows)
 
@@ -154,6 +156,6 @@ pnpm tauri build    # output: src-tauri\target\release\dsh-desktop-windowos.exe
 
 ### How it works
 
-- The Rust side probes readiness via `POST /api/host.describe` (`result.ok === true`); launch runs a local-first candidate chain: `DSH_CMD` env var → `dsh web` (global install on PATH) → `node_modules\.bin\dsh.cmd` (exe dir / working dir / user profile) → a previously consented `npx --yes @deepseek-ai/dsh web` (choice persisted in `%LOCALAPPDATA%\dsh-desktop\settings.json`); an empty chain emits `notfound` and the boot page offers download / re-detect / exit — each candidate has its own readiness window, falls through on failure with every attempt logged; the child is spawned via `cmd /C` (with `CREATE_NO_WINDOW`; stdout/stderr to a log file)
+- The Rust side probes readiness via `POST /api/host.describe` (`result.ok === true`); launch runs a local-first candidate chain: `DSH_CMD` env var (first candidate, falls through on failure) → custom path from the boot page (persisted in `settings.json`) → `dsh web` (PATH-global, checked via `where dsh`) → `node_modules\.bin\dsh.cmd` (exe dir / working dir / user profile) → a previously consented `npx --yes @deepseek-ai/dsh web`; an empty chain emits `notfound` and the boot page offers a one-click `npm install -g` (run by the app), the npx fallback, and a manual path input — each candidate has its own readiness window, falls through on failure with every attempt logged; the child is spawned via `cmd /S /C` (with `CREATE_NO_WINDOW`; stdout/stderr to a log file)
 - It listens on `ws://127.0.0.1:3080/api/events.host`; on a **true→false edge** of `running` in `host/session-status` while the window is hidden, it resolves the session title via `session.list` and fires the toast
 - A bare exe has no installer, so Windows would silently drop toasts — the app registers its AppUserModelID in the registry at startup (`HKCU\Software\Classes\AppUserModelId\com.dsh.desktop`) to make notifications work
