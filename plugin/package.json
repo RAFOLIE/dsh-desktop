@@ -1,7 +1,7 @@
 {
   "name": "dsh-desktop-plugin",
   "description": "Install and launch the dsh-desktop-windowos desktop shell: auto-downloads and auto-updates the exe from GitHub Releases, creates desktop shortcuts (app + web UI), and exposes a desktop_launch tool. First run of the unsigned exe shows Windows SmartScreen - click More info > Run anyway.",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "license": "MIT",
   "repository": {
     "type": "git",

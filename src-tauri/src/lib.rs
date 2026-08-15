@@ -28,6 +28,13 @@ fn dsh_download(app: AppHandle) {
     dsh::download_and_start(app);
 }
 
+/// Frontend-invoked one-click global install: npm i -g @deepseek-ai/dsh,
+/// then startup leads with the freshly installed global dsh.
+#[tauri::command]
+fn dsh_install_npm(app: AppHandle) {
+    dsh::install_global_npm(app);
+}
+
 /// Frontend-invoked custom dsh path from the notfound dialog: validates it
 /// exists, persists it, and retries startup with it leading the chain.
 #[tauri::command]
@@ -135,7 +142,7 @@ pub fn run() {    tauri::Builder::default()
         }))
         .plugin(tauri_plugin_opener::init())
         .manage(dsh::DshState::new())
-        .invoke_handler(tauri::generate_handler![dsh_retry, dsh_download, dsh_custom_path, dsh_exit])
+        .invoke_handler(tauri::generate_handler![dsh_retry, dsh_download, dsh_custom_path, dsh_install_npm, dsh_exit])
         .setup(|app| {
             #[cfg(windows)]
             ensure_toast_aumid();

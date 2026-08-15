@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.4.5 — 2026-08-15
+
+改进:未找到 DSH 时,「npm 全局安装」升级为一键主推荐。
+
+- 启动页新增**「一键全局安装并启动」**按钮:应用直接执行 `npm install -g @deepseek-ai/dsh`(约 1-3 分钟,日志写入 dsh.log),完成后自动重走启动链并永久走最快的全局路径(终端同时获得 `dsh` 命令)
+- npx 下载降为**备选**(装进 npx 缓存,不产生 dsh 命令,每次启动有解析开销)
+- 安装失败(无 Node/npm/网络问题)在启动页给出明确指引,不影响其它选项
+
+Improvement: one-click global npm install becomes the primary recommendation when no DSH is found.
+
+- New "一键全局安装并启动" button: the app runs `npm install -g @deepseek-ai/dsh` itself (~1-3 min, logged to dsh.log), then restarts the chain and permanently uses the fast global path (the terminal gains the `dsh` command too)
+- The npx download is demoted to a fallback (npx cache only, no `dsh` command, per-launch resolution overhead)
+- Install failures (missing Node/npm, network) surface clear guidance on the boot page without affecting the other options
+
 ## v1.4.4 — 2026-08-15
 
 改进:启动页支持手动指定 DSH 路径,`DSH_CMD` 失效不再卡死启动。

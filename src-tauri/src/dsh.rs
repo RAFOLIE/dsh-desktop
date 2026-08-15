@@ -362,6 +362,59 @@ pub fn set_custom_path(app: &AppHandle, raw: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Frontend "一键全局安装并启动": run `npm install -g @deepseek-ai/dsh` and
+/// retry startup — afterwards `where dsh` leads the chain permanently. The
+/// install (500+ packages) can take minutes; it runs on its own thread and
+/// reports progress through the usual `dsh-status` events.
+pub fn install_global_npm(app: AppHandle) {
+    let app2 = app.clone();
+    std::thread::spawn(move || {
+        let _ = app2.emit(
+            "dsh-status",
+            json!({ "status": "starting", "method": "npm 全局安装中(约 1-3 分钟)" }),
+        );
+        let mut command = Command::new("cmd");
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.raw_arg("/S /C \"npm install -g @deepseek-ai/dsh\"");
+        }
+        #[cfg(not(windows))]
+        {
+            command.arg("-c").arg("npm install -g @deepseek-ai/dsh");
+        }
+        command
+            .current_dir(std::env::var("USERPROFILE").unwrap_or_else(|_| ".".to_string()))
+            .stdout(log_stdio())
+            .stderr(null_stdio());
+        apply_no_window(&mut command);
+        match command.output() {
+            Ok(output) if output.status.success() => {
+                retry(app2);
+            }
+            Ok(output) => {
+                let _ = app2.emit(
+                    "dsh-status",
+                    json!({
+                        "status": "error",
+                        "message": format!(
+                            "npm 全局安装失败(退出码 {})。详见日志 {}\\dsh.log,或改用「下载并启动(npx)」/手动路径。",
+                            output.status.code().unwrap_or(-1),
+                            std::env::var("LOCALAPPDATA").unwrap_or_default(),
+                        ),
+                    }),
+                );
+            }
+            Err(error) => {
+                let _ = app2.emit(
+                    "dsh-status",
+                    json!({ "status": "error", "message": format!("无法运行 npm(需要已安装 Node.js):{error}") }),
+                );
+            }
+        }
+    });
+}
+
 /// Re-arm after a failure: tear down any stale owned subprocess, then startup.
 pub fn retry(app: AppHandle) {
     teardown(&app);
@@ -546,6 +599,18 @@ fn log_streams() -> std::io::Result<(Stdio, Stdio)> {
     let stdout = OpenOptions::new().create(true).append(true).open(&path)?;
     let stderr = stdout.try_clone()?;
     Ok((Stdio::from(stdout), Stdio::from(stderr)))
+}
+
+/// One append handle to the log (stdout only).
+fn log_stdio() -> Stdio {
+    match log_streams() {
+        Ok((stdout, _)) => stdout,
+        Err(_) => Stdio::null(),
+    }
+}
+
+fn null_stdio() -> Stdio {
+    Stdio::null()
 }
 
 fn log_path() -> std::path::PathBuf {

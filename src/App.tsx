@@ -71,10 +71,13 @@ function App() {
         <div className="state">
           <div className="text error">未找到本机 DSH</div>
           <div className="detail">
-            已搜索 PATH(where dsh,含 npm 全局 dsh/dsh.cmd)、应用目录与用户目录,均未发现 DSH 安装。请选择:
+            已搜索 PATH(where dsh,含 npm 全局 dsh/dsh.cmd)、应用目录与用户目录,均未发现 DSH 安装。推荐一键安装:
           </div>
+          <button type="button" onClick={() => invoke("dsh_install_npm")}>
+            一键全局安装并启动(推荐,约 1-3 分钟)
+          </button>
           <button type="button" onClick={() => invoke("dsh_download")}>
-            下载并启动(首次约几分钟)
+            下载并启动(npx 缓存,备选)
           </button>
           <input
             className="path-input"
@@ -99,8 +102,7 @@ function App() {
             退出
           </button>
           <div className="detail">
-            推荐:命令行执行 npm i -g @deepseek-ai/dsh
-            全局安装,之后启动不再询问;选过「下载并启动」后下次也会自动走 npx
+            全局安装后终端可用 dsh 命令,应用启动最快且无需网络;不想全局装就选 npx 备选或填路径
           </div>
         </div>
       )}
