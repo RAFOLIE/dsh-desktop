@@ -264,6 +264,25 @@ enum Attempt {
     Failed(String),
 }
 
+
+/// Emit `ready` repeatedly for a short window instead of once. The boot page's
+/// listener registers only after the embedded webview finishes loading, which
+/// races the fast local readiness probe — a one-shot emit can be missed and
+/// leave the window stuck on the boot spinner.
+fn emit_ready(app: &AppHandle, attached: bool, method: Option<String>) {
+    let app2 = app.clone();
+    std::thread::spawn(move || {
+        for _ in 0..10 {
+            let mut payload = json!({ "status": "ready", "attached": attached });
+            if let Some(m) = &method {
+                payload["method"] = json!(m);
+            }
+            let _ = app2.emit("dsh-status", payload);
+            std::thread::sleep(Duration::from_millis(400));
+        }
+    });
+}
+
 /// Drive startup from a background thread. Emits `dsh-status` events:
 /// `{status:"starting",method}` per attempt, then either
 /// `{status:"ready",attached,method}` or `{status:"error",message}` with every
@@ -271,7 +290,7 @@ enum Attempt {
 pub fn startup(app: AppHandle) {
     // Attach path: DSH already up — never spawn, never kill on exit.
     if probe_ready_once() {
-        let _ = app.emit("dsh-status", json!({ "status": "ready", "attached": true }));
+        emit_ready(&app, true, None);
         crate::menu::install(app);
         return;
     }
@@ -319,10 +338,7 @@ fn try_candidate(app: &AppHandle, candidate: &Candidate) -> Attempt {
             // Hand the owned child to managed state; teardown kills its tree.
             let state = app.state::<DshState>();
             *state.inner.lock().unwrap() = Some(DshInner { child, pid });
-            let _ = app.emit(
-                "dsh-status",
-                json!({ "status": "ready", "attached": false, "method": candidate.label }),
-            );
+            emit_ready(app, false, Some(candidate.label.clone()));
             crate::menu::install(app.clone());
             return Attempt::Ready;
         }
