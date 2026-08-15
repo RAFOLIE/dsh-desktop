@@ -23,6 +23,10 @@ export interface Config {
   webUrl?: string
   /** `owner/repo` whose GitHub Releases provide the exe. */
   repoSlug?: string
+  /** Upgrade the exe when a newer GitHub Release exists (checks on activation). */
+  autoUpdate?: boolean
+  /** Optional mirror prefix for release-asset downloads, e.g. `https://ghproxy.com/`. */
+  assetProxy?: string
 }
 
 /** Configuration after defaults have been resolved. */
@@ -35,6 +39,8 @@ export interface ResolvedConfig {
   webShortcutName: string
   webUrl: string
   repoSlug: string
+  autoUpdate: boolean
+  assetProxy: string
 }
 
 /** Default install directory under %LOCALAPPDATA%. */
@@ -55,6 +61,8 @@ export const Config: z<Config> = z.object({
   webShortcutName: z.string().default('DeepSeek Harness Web'),
   webUrl: z.string().default('http://127.0.0.1:3080'),
   repoSlug: z.string().default('RAFOLIE/dsh-desktop-windowos'),
+  autoUpdate: z.boolean().default(true),
+  assetProxy: z.string().default(''),
 })
 
 /**
@@ -72,5 +80,7 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
     webShortcutName: config.webShortcutName ?? 'DeepSeek Harness Web',
     webUrl: config.webUrl ?? 'http://127.0.0.1:3080',
     repoSlug: config.repoSlug ?? 'RAFOLIE/dsh-desktop-windowos',
+    autoUpdate: config.autoUpdate ?? true,
+    assetProxy: config.assetProxy ?? '',
   }
 }

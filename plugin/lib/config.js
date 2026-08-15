@@ -21,6 +21,8 @@ export const Config = z.object({
     webShortcutName: z.string().default('DeepSeek Harness Web'),
     webUrl: z.string().default('http://127.0.0.1:3080'),
     repoSlug: z.string().default('RAFOLIE/dsh-desktop-windowos'),
+    autoUpdate: z.boolean().default(true),
+    assetProxy: z.string().default(''),
 });
 /**
  * Resolve defaults for direct callers that bypass Cordis Loader.
@@ -37,5 +39,7 @@ export function resolveConfig(config = {}) {
         webShortcutName: config.webShortcutName ?? 'DeepSeek Harness Web',
         webUrl: config.webUrl ?? 'http://127.0.0.1:3080',
         repoSlug: config.repoSlug ?? 'RAFOLIE/dsh-desktop-windowos',
+        autoUpdate: config.autoUpdate ?? true,
+        assetProxy: config.assetProxy ?? '',
     };
 }

@@ -1,19 +1,43 @@
 import { describe, expect, it } from 'vitest'
-import { ensureInstalled, ensureWebShortcut, pickExeAssetUrl, type InstallerDeps } from '../src/installer.js'
+import {
+  compareVersions,
+  ensureInstalled,
+  ensureUpdated,
+  ensureWebShortcut,
+  pickExeAsset,
+  pickExeAssetUrl,
+  resolveAssetUrl,
+  type InstallerDeps,
+} from '../src/installer.js'
 import { resolveConfig } from '../src/config.js'
 
 const config = resolveConfig({ installDir: 'C:\\Apps\\dsh', shortcutName: 'DSH' })
 
 function makeDeps(overrides: Partial<InstallerDeps> = {}): InstallerDeps & {
-  calls: { mkdir: string[], writeFile: Array<[string, number]>, shortcut: Array<[string, string, string]> }
+  calls: {
+    mkdir: string[]
+    writeFile: Array<[string, number]>
+    shortcut: Array<[string, string, string]>
+    renames: Array<[string, string]>
+    removed: string[]
+  }
 } {
-  const calls = { mkdir: [] as string[], writeFile: [] as Array<[string, number]>, shortcut: [] as Array<[string, string, string]> }
+  const calls = {
+    mkdir: [] as string[],
+    writeFile: [] as Array<[string, number]>,
+    shortcut: [] as Array<[string, string, string]>,
+    renames: [] as Array<[string, string]>,
+    removed: [] as string[],
+  }
   return {
     calls,
     exists: () => false,
     mkdir: dir => { calls.mkdir.push(dir) },
     writeFile: (path, data) => { calls.writeFile.push([path, data.length]) },
     desktopDir: async () => 'C:\\Users\\A\\Desktop',
+    readExeVersion: async () => '',
+    rename: (from, to) => { calls.renames.push([from, to]) },
+    removeFile: path => { calls.removed.push(path) },
     fetchText: async () =>
       JSON.stringify({ assets: [
         { name: 'dsh-desktop-windowos-v1.4.2.zip', browser_download_url: 'https://example/z.zip' },
@@ -102,5 +126,69 @@ describe('ensureWebShortcut', () => {
     expect(result.created).toBe(false)
     expect(result.path).toBe('')
     expect(deps.calls.writeFile).toEqual([])
+  })
+})
+
+describe('pickExeAsset + compareVersions + resolveAssetUrl', () => {
+  it('parses the version from the asset name', () => {
+    const asset = pickExeAsset('{"assets":[{"name":"dsh-desktop-windowos-v1.5.0.exe","browser_download_url":"u"}]}')
+    expect(asset).toEqual({ url: 'u', version: '1.5.0' })
+  })
+
+  it('reports an empty version for non-versioned asset names', () => {
+    const asset = pickExeAsset('{"assets":[{"name":"app.exe","browser_download_url":"u"}]}')
+    expect(asset.version).toBe('')
+  })
+
+  it('compares dotted versions numerically', () => {
+    expect(compareVersions('1.4.2', '1.4.10')).toBeLessThan(0)
+    expect(compareVersions('2.0', '1.9.9')).toBeGreaterThan(0)
+    expect(compareVersions('1.4', '1.4.0')).toBe(0)
+  })
+
+  it('applies the asset proxy prefix when configured', () => {
+    const proxied = resolveConfig({ installDir: 'C:\\Apps\\dsh', assetProxy: 'https://ghproxy.com/' })
+    expect(resolveAssetUrl(proxied, 'https://github.com/a/b')).toBe('https://ghproxy.com/https://github.com/a/b')
+    expect(resolveAssetUrl(config, 'https://github.com/a/b')).toBe('https://github.com/a/b')
+  })
+})
+
+describe('ensureUpdated', () => {
+  it('replaces the exe when the release is newer, renaming the old aside', async () => {
+    const deps = makeDeps({
+      exists: () => true,
+      readExeVersion: async () => '1.4.1',
+      fetchText: async () =>
+        JSON.stringify({ assets: [{ name: 'dsh-desktop-windowos-v1.4.2.exe', browser_download_url: 'https://example/e.exe' }] }),
+    })
+    const result = await ensureUpdated(config, deps)
+    expect(result.updated).toBe(true)
+    expect(result.fromVersion).toBe('1.4.1')
+    expect(result.toVersion).toBe('1.4.2')
+    expect(deps.calls.renames).toEqual([['C:\\Apps\\dsh\\dsh-desktop-windowos.exe', 'C:\\Apps\\dsh\\dsh-desktop-windowos.exe.old']])
+    expect(deps.calls.writeFile.at(-1)).toEqual(['C:\\Apps\\dsh\\dsh-desktop-windowos.exe', 2048])
+  })
+
+  it('does nothing when already up to date', async () => {
+    const deps = makeDeps({
+      exists: () => true,
+      readExeVersion: async () => '1.4.2',
+    })
+    const result = await ensureUpdated(config, deps)
+    expect(result.updated).toBe(false)
+    expect(deps.calls.renames).toEqual([])
+    expect(deps.calls.writeFile).toEqual([])
+  })
+
+  it('does nothing when the exe is missing', async () => {
+    const deps = makeDeps({ fetchText: async () => { throw new Error('must not fetch') } })
+    const result = await ensureUpdated(config, deps)
+    expect(result.updated).toBe(false)
+  })
+
+  it('does nothing when the installed version cannot be read', async () => {
+    const deps = makeDeps({ exists: () => true, readExeVersion: async () => '' })
+    const result = await ensureUpdated(config, deps)
+    expect(result.updated).toBe(false)
   })
 })

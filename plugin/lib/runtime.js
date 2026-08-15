@@ -4,7 +4,7 @@
  */
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { resolveConfig } from './config.js';
-import { ensureInstalled, ensureWebShortcut, nodeDeps } from './installer.js';
+import { ensureInstalled, ensureUpdated, ensureWebShortcut, nodeDeps } from './installer.js';
 import { launchDesktop } from './launcher.js';
 /**
  * Apply the plugin to its Cordis context.
@@ -26,6 +26,16 @@ export function apply(ctx, config) {
                 + `${result.downloaded ? ' (downloaded)' : ''}${result.shortcut ? ', shortcut refreshed' : ''}`);
         })
             .catch(error => { logger.warn(`dsh-desktop-plugin: install failed: ${String(error)}`); })
+            // Upgrade check after install settles; the rename-aside swap is safe
+            // even while the app is running.
+            .then(() => (resolved.autoUpdate
+            ? ensureUpdated(resolved, nodeDeps())
+                .then(update => {
+                if (update.updated)
+                    logger.info(`dsh-desktop-plugin: exe upgraded ${update.fromVersion} -> ${update.toVersion}`);
+            })
+                .catch(error => { logger.warn(`dsh-desktop-plugin: update check failed: ${String(error)}`); })
+            : undefined))
             // The web .url shortcut is independent of the exe download; run it
             // after install settles so the exe icon is available whenever possible.
             .finally(() => ensureWebShortcut(resolved, nodeDeps())

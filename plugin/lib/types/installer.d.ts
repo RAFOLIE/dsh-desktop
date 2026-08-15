@@ -16,6 +16,12 @@ export interface InstallerDeps {
     fetchBytes(url: string): Promise<Buffer>;
     /** Create/refresh a desktop .lnk pointing at the exe. */
     createShortcut(exePath: string, workDir: string, name: string): Promise<void>;
+    /** Read an exe's embedded product version, '' when unreadable. */
+    readExeVersion(path: string): Promise<string>;
+    /** Rename/move a file (works on a running exe on Windows). */
+    rename(from: string, to: string): void;
+    /** Best-effort delete; missing files are fine. */
+    removeFile(path: string): void;
 }
 /** Outcome of one ensureInstalled run. */
 export interface InstallResult {
@@ -25,6 +31,14 @@ export interface InstallResult {
     /** The desktop shortcut was created/refreshed. */
     shortcut: boolean;
 }
+/** Outcome of one ensureUpdated run. */
+export interface UpdateResult {
+    exePath: string;
+    /** The exe was replaced with a newer release. */
+    updated: boolean;
+    fromVersion: string;
+    toVersion: string;
+}
 /** Outcome of one ensureWebShortcut run. */
 export interface WebShortcutResult {
     /** Absolute path of the .url file; empty when creation is disabled. */
@@ -32,6 +46,19 @@ export interface WebShortcutResult {
     /** The web shortcut was created/refreshed. */
     created: boolean;
 }
+/** Prefix a release-asset URL with the configured mirror when present. */
+export declare function resolveAssetUrl(config: ResolvedConfig, url: string): string;
+/**
+ * Pick the desktop exe asset (download URL + version) from a GitHub release
+ * JSON body. The version comes from the `dsh-desktop-windowos-v<semver>.exe`
+ * asset name; entries without a parseable version report ''.
+ */
+export declare function pickExeAsset(body: string): {
+    url: string;
+    version: string;
+};
+/** Dot-numeric compare: negative when a<b, 0 when equal, positive when a>b. */
+export declare function compareVersions(a: string, b: string): number;
 /** Production deps over node:fs, global fetch, curl, and PowerShell. */
 export declare function nodeDeps(): InstallerDeps;
 /**
@@ -58,3 +85,13 @@ export declare function ensureInstalled(config: ResolvedConfig, deps: InstallerD
  * @returns what happened during this run.
  */
 export declare function ensureWebShortcut(config: ResolvedConfig, deps: InstallerDeps): Promise<WebShortcutResult>;
+/**
+ * Upgrade the installed exe when a newer GitHub Release exists. Windows
+ * allows renaming a running exe, so the swap renames the old one aside and
+ * writes the new in place — safe even while the app is running. Safe to
+ * re-run; a missing exe is left to ensureInstalled.
+ * @param config - resolved plugin configuration.
+ * @param deps - host boundary to fake in tests.
+ * @returns what happened during this run.
+ */
+export declare function ensureUpdated(config: ResolvedConfig, deps: InstallerDeps): Promise<UpdateResult>;

@@ -4,6 +4,34 @@
  */
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
+/** Prefix a release-asset URL with the configured mirror when present. */
+export function resolveAssetUrl(config, url) {
+    return config.assetProxy === '' ? url : `${config.assetProxy}${url}`;
+}
+/**
+ * Pick the desktop exe asset (download URL + version) from a GitHub release
+ * JSON body. The version comes from the `dsh-desktop-windowos-v<semver>.exe`
+ * asset name; entries without a parseable version report ''.
+ */
+export function pickExeAsset(body) {
+    const release = JSON.parse(body);
+    const asset = release.assets?.find(candidate => candidate.name.endsWith('.exe'));
+    if (asset === undefined)
+        throw new Error('latest release has no .exe asset');
+    const version = /^dsh-desktop-windowos-v(\d+(?:\.\d+)*)\.exe$/.exec(asset.name)?.[1] ?? '';
+    return { url: asset.browser_download_url, version };
+}
+/** Dot-numeric compare: negative when a<b, 0 when equal, positive when a>b. */
+export function compareVersions(a, b) {
+    const pa = a.split('.').map(Number);
+    const pb = b.split('.').map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+        if (d !== 0)
+            return d;
+    }
+    return 0;
+}
 /** Single-quote escape for PowerShell string literals. */
 function psQuote(value) {
     return value.replaceAll('\'', '\'\'');
@@ -77,6 +105,17 @@ export function nodeDeps() {
             child.on('error', reject);
             child.on('exit', code => (code === 0 ? resolve() : reject(new Error(`shortcut exit ${code}`))));
         }),
+        readExeVersion: path => new Promise(resolve => {
+            const child = spawn('powershell', ['-NoProfile', '-Command', `(Get-Item -LiteralPath '${psQuote(path)}').VersionInfo.ProductVersion`], {
+                windowsHide: true,
+            });
+            let out = '';
+            child.stdout.on('data', chunk => { out += chunk; });
+            child.on('error', () => resolve(''));
+            child.on('exit', code => (code === 0 ? resolve(out.trim()) : resolve('')));
+        }),
+        rename: (from, to) => fs.renameSync(from, to),
+        removeFile: path => fs.rmSync(path, { force: true }),
     };
 }
 /**
@@ -104,7 +143,7 @@ export async function ensureInstalled(config, deps) {
     let downloaded = false;
     if (!deps.exists(exePath)) {
         const body = await deps.fetchText(`https://api.github.com/repos/${config.repoSlug}/releases/latest`);
-        const assetUrl = pickExeAssetUrl(body);
+        const assetUrl = resolveAssetUrl(config, pickExeAssetUrl(body));
         const bytes = await deps.fetchBytes(assetUrl);
         deps.mkdir(config.installDir);
         deps.writeFile(exePath, bytes);
@@ -137,4 +176,32 @@ export async function ensureWebShortcut(config, deps) {
     }
     deps.writeFile(path, Buffer.from(`${lines.join('\r\n')}\r\n`, 'utf8'));
     return { path, created: true };
+}
+/**
+ * Upgrade the installed exe when a newer GitHub Release exists. Windows
+ * allows renaming a running exe, so the swap renames the old one aside and
+ * writes the new in place — safe even while the app is running. Safe to
+ * re-run; a missing exe is left to ensureInstalled.
+ * @param config - resolved plugin configuration.
+ * @param deps - host boundary to fake in tests.
+ * @returns what happened during this run.
+ */
+export async function ensureUpdated(config, deps) {
+    const exePath = `${config.installDir}\\dsh-desktop-windowos.exe`;
+    const none = { exePath, updated: false, fromVersion: '', toVersion: '' };
+    if (!deps.exists(exePath))
+        return none;
+    const body = await deps.fetchText(`https://api.github.com/repos/${config.repoSlug}/releases/latest`);
+    const asset = pickExeAsset(body);
+    if (asset.version === '')
+        return none;
+    const current = await deps.readExeVersion(exePath);
+    if (current === '' || compareVersions(asset.version, current) <= 0)
+        return none;
+    const bytes = await deps.fetchBytes(resolveAssetUrl(config, asset.url));
+    const oldPath = `${exePath}.old`;
+    deps.removeFile(oldPath);
+    deps.rename(exePath, oldPath);
+    deps.writeFile(exePath, bytes);
+    return { exePath, updated: true, fromVersion: current, toVersion: asset.version };
 }
