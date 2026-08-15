@@ -88,3 +88,16 @@ curl -s https://awesome-dsh-plugin.com/plugins.json           # 注册表数据(
 | 市场(dshmarket)只认 npm 包名或裸 GitHub 仓库 URL | 插件必须发 npm 才能被市场按钮安装;monorepo 子目录条目靠探测自动映射 npm |
 | 公司终端安全策略静默删除"隐藏启动 cmd+重定向"类 .cmd 脚本 | 脚本用 `start /min`(可见最小化窗口)而非 `-WindowStyle Hidden` |
 | git push 频繁 Connection reset | 重试循环 + `git -c http.proxy= -c https.proxy= push`(代理绕过) |
+
+## 持续优化本技能(每次使用后执行)
+
+每次真实使用本技能发布插件后,做一轮复盘并回写:
+
+1. **找差异**:实际过程与技能写法有哪些不同?遇到「已知坑」没覆盖的新问题?官方规则变了(注册表条目格式/分类/探测行为/npm 发包政策/市场源格式)?
+2. **回写经验**:有新发现就更新本 SKILL.md——新坑加进坑表;官方流程变化修正对应步骤;某个步骤被证明多余或失效就**删掉**(保持精炼,宁可删也不要堆规则)。
+3. **同步双副本**:以本地 `~/.agents/skills/dsh-plugin-submit/` 为主副本;改完做脱敏检查(无令牌/无本机路径/无隐私),拷贝到仓库 `.agents/skills/dsh-plugin-submit/`,随下次提交推送。
+4. **追加更新记录**(见下),一行一条,写清日期和来源。
+
+### 更新记录
+
+- 2026-08-15: 初版,沉淀自 dsh-desktop-plugin 上架全程实战(npm 三个版本迭代、注册表 PR #212 合并 / #242 被关闭的教训、市场源限制、curl 下载修复)
