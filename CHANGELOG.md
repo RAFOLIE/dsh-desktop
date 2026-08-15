@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.4.3 — 2026-08-15
+
+改进:托盘图标固定显示在任务栏,不再每次启动都被收进溢出区。
+
+- 现象:Windows 11 按可执行文件路径识别托盘图标并默认收进任务栏角溢出,且每次启动都回到默认,不记住用户上次的摆放
+- 修法:启动后在 `HKCU\Control Panel\NotifyIconSettings` 中按本程序路径匹配图标项并写入 `IsPromoted = 1`——这正是用户手动"取消隐藏"时 Windows 写入的值;注册后短暂重试(该键在托盘注册后才生成),失败不影响启动
+- 注意:如确实想收起图标,可在 Windows 设置 → 任务栏 → 其他系统托盘图标 中关闭,但下次启动应用会再次固定(托盘是本应用的主界面)
+
+Improvement: the tray icon is now pinned to the taskbar instead of falling back into the overflow on every launch.
+
+- Cause: Windows 11 identifies tray icons by exe path under the per-icon settings and defaults to the hidden overflow, resetting the user's placement each launch
+- Fix: after startup, match this exe's entry under `HKCU\Control Panel\NotifyIconSettings` and write `IsPromoted = 1` — the exact value Windows writes when a user unhides an icon; retried briefly since the key appears only after the tray registers; failures are cosmetic
+- Note: to collapse the icon on purpose, turn it off in Windows Settings → Taskbar → Other system tray icons — the app re-pins on next launch (the tray is this app's main interface)
+
 ## v1.4.2 — 2026-08-14
 
 修复:托盘「重启 DSH」后窗口未回到 webchat(DSH 本体重启成功,页面停在死页/空白页)。

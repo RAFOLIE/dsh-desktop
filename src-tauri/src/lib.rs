@@ -88,9 +88,38 @@ fn ensure_toast_aumid() {
     }
 }
 
+/// Keep the tray icon pinned to the taskbar. Windows 11 identifies tray icons
+/// by exe path under `HKCU\Control Panel\NotifyIconSettings` and defaults new
+/// identities to the hidden overflow; `IsPromoted = 1` is exactly the value
+/// Windows writes when a user unhides an icon. Without this the placement
+/// resets into the overflow on every launch. Retried briefly because the key
+/// only appears shortly after the tray icon registers. A failure is cosmetic
+/// and never blocks the app.
+#[cfg(windows)]
+fn ensure_tray_promoted() {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_WRITE};
+    use winreg::RegKey;
+
+    let Ok(exe) = tauri::utils::platform::current_exe() else { return };
+    let exe = exe
+        .display()
+        .to_string()
+        .strip_prefix(r"\\?\")
+        .unwrap_or(&exe.display().to_string())
+        .to_lowercase();
+    let root = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags(r"Control Panel\NotifyIconSettings", KEY_READ | KEY_WRITE);
+    let Ok(root) = root else { return };
+    for key in root.enum_keys().flatten() {
+        let Ok(sub) = root.open_subkey_with_flags(&key, KEY_READ | KEY_WRITE) else { continue };
+        let Ok(path) = sub.get_value::<String, _>("ExecutablePath") else { continue };
+        if path.to_lowercase() != exe { continue }
+        let _: std::io::Result<()> = sub.set_value("IsPromoted", &1u32);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    tauri::Builder::default()
+pub fn run() {    tauri::Builder::default()
         // Registered first: a second launch (e.g. toast foreground activation,
         // or the user double-clicking the exe again) focuses the existing window
         // instead of starting a second instance.
@@ -168,6 +197,16 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+
+            // Tray icon pinning: Windows creates the per-icon settings key
+            // only moments after the tray registers, so retry briefly on a
+            // side thread — never block startup on it.
+            std::thread::spawn(|| {
+                for _ in 0..5 {
+                    ensure_tray_promoted();
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                }
+            });
 
             // DSH lifecycle (probe/spawn/wait) and the event monitor run on their
             // own blocking threads; both share the AppHandle.

@@ -831,7 +831,7 @@ dependencies = [
 
 [[package]]
 name = "dsh-desktop-windowos"
-version = "1.4.2"
+version = "1.4.3"
 dependencies = [
  "http",
  "serde",
