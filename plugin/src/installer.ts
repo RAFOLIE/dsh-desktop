@@ -16,8 +16,8 @@ export interface InstallerDeps {
   desktopDir(): Promise<string>
   /** Fetch a URL's body as JSON text (GitHub API). */
   fetchText(url: string): Promise<string>
-  /** Fetch a URL's body as bytes (release asset). */
-  fetchBytes(url: string): Promise<Buffer>
+  /** Fetch a URL's body as bytes (release asset); aborting the signal kills the download. */
+  fetchBytes(url: string, signal?: AbortSignal): Promise<Buffer>
   /** Create/refresh a desktop .lnk pointing at the exe. */
   createShortcut(exePath: string, workDir: string, name: string): Promise<void>
   /** Read an exe's embedded product version, '' when unreadable. */
@@ -52,6 +52,11 @@ export interface WebShortcutResult {
   path: string
   /** The web shortcut was created/refreshed. */
   created: boolean
+}
+
+/** Absolute path of the desktop exe under the configured install dir. */
+export function exePathOf(config: ResolvedConfig): string {
+  return `${config.installDir}\\dsh-desktop-windowos.exe`
 }
 
 /** Prefix a release-asset URL with the configured mirror when present. */
@@ -116,14 +121,23 @@ export function nodeDeps(): InstallerDeps {
     },
     // Release assets are multi-MB; Node's fetch stalls on some networks where
     // system curl succeeds, so route the binary download through curl.exe.
-    fetchBytes: url => new Promise((resolve, reject) => {
+    // An aborted signal kills the curl child so job cancellation is prompt.
+    fetchBytes: (url, signal) => new Promise((resolve, reject) => {
       const tmp = `${process.env.TEMP ?? process.cwd()}\\dsh-desktop-download-${process.pid}-${Date.now()}.exe`
       const child = spawn('curl', [
         '--silent', '--show-error', '--location', '--fail', '--retry', '2',
         '--max-time', '150', '--user-agent', 'dsh-desktop-plugin', '--output', tmp, url,
       ], { stdio: 'ignore', windowsHide: true })
+      const onAbort = () => { child.kill() }
+      if (signal !== undefined && !signal.aborted) signal.addEventListener('abort', onAbort, { once: true })
       child.on('error', error => { fs.rmSync(tmp, { force: true }); reject(error) })
       child.on('exit', code => {
+        signal?.removeEventListener('abort', onAbort)
+        if (signal?.aborted) {
+          fs.rmSync(tmp, { force: true })
+          reject(new Error(`download aborted: ${url}`))
+          return
+        }
         if (code !== 0) {
           fs.rmSync(tmp, { force: true })
           reject(new Error(`curl exit ${code} for ${url}`))
@@ -180,15 +194,16 @@ export function pickExeAssetUrl(body: string): string {
  * when missing) and the desktop shortcut points at it. Safe to re-run.
  * @param config - resolved plugin configuration.
  * @param deps - host boundary to fake in tests.
+ * @param signal - cooperative cancellation for the download, when the caller owns one.
  * @returns what happened during this run.
  */
-export async function ensureInstalled(config: ResolvedConfig, deps: InstallerDeps): Promise<InstallResult> {
-  const exePath = `${config.installDir}\\dsh-desktop-windowos.exe`
+export async function ensureInstalled(config: ResolvedConfig, deps: InstallerDeps, signal?: AbortSignal): Promise<InstallResult> {
+  const exePath = exePathOf(config)
   let downloaded = false
   if (!deps.exists(exePath)) {
     const body = await deps.fetchText(`https://api.github.com/repos/${config.repoSlug}/releases/latest`)
     const assetUrl = resolveAssetUrl(config, pickExeAssetUrl(body))
-    const bytes = await deps.fetchBytes(assetUrl)
+    const bytes = await deps.fetchBytes(assetUrl, signal)
     deps.mkdir(config.installDir)
     deps.writeFile(exePath, bytes)
     downloaded = true
@@ -214,7 +229,7 @@ export async function ensureWebShortcut(config: ResolvedConfig, deps: InstallerD
   const desktopDir = await deps.desktopDir()
   const path = `${desktopDir}\\${config.webShortcutName}.url`
   const lines = ['[InternetShortcut]', `URL=${config.webUrl}`]
-  const exePath = `${config.installDir}\\dsh-desktop-windowos.exe`
+  const exePath = exePathOf(config)
   if (deps.exists(exePath)) {
     lines.push(`IconFile=${exePath}`, 'IconIndex=0')
   }
@@ -232,7 +247,7 @@ export async function ensureWebShortcut(config: ResolvedConfig, deps: InstallerD
  * @returns what happened during this run.
  */
 export async function ensureUpdated(config: ResolvedConfig, deps: InstallerDeps): Promise<UpdateResult> {
-  const exePath = `${config.installDir}\\dsh-desktop-windowos.exe`
+  const exePath = exePathOf(config)
   const none: UpdateResult = { exePath, updated: false, fromVersion: '', toVersion: '' }
   if (!deps.exists(exePath)) return none
   const body = await deps.fetchText(`https://api.github.com/repos/${config.repoSlug}/releases/latest`)

@@ -23,6 +23,7 @@ export const Config = z.object({
     repoSlug: z.string().default('RAFOLIE/dsh-desktop-windowos'),
     autoUpdate: z.boolean().default(true),
     assetProxy: z.string().default(''),
+    backgroundInstall: z.boolean().default(true),
 });
 /**
  * Resolve defaults for direct callers that bypass Cordis Loader.
@@ -41,5 +42,6 @@ export function resolveConfig(config = {}) {
         repoSlug: config.repoSlug ?? 'RAFOLIE/dsh-desktop-windowos',
         autoUpdate: config.autoUpdate ?? true,
         assetProxy: config.assetProxy ?? '',
+        backgroundInstall: config.backgroundInstall ?? true,
     };
 }

@@ -12,8 +12,8 @@ export interface InstallerDeps {
     desktopDir(): Promise<string>;
     /** Fetch a URL's body as JSON text (GitHub API). */
     fetchText(url: string): Promise<string>;
-    /** Fetch a URL's body as bytes (release asset). */
-    fetchBytes(url: string): Promise<Buffer>;
+    /** Fetch a URL's body as bytes (release asset); aborting the signal kills the download. */
+    fetchBytes(url: string, signal?: AbortSignal): Promise<Buffer>;
     /** Create/refresh a desktop .lnk pointing at the exe. */
     createShortcut(exePath: string, workDir: string, name: string): Promise<void>;
     /** Read an exe's embedded product version, '' when unreadable. */
@@ -46,6 +46,8 @@ export interface WebShortcutResult {
     /** The web shortcut was created/refreshed. */
     created: boolean;
 }
+/** Absolute path of the desktop exe under the configured install dir. */
+export declare function exePathOf(config: ResolvedConfig): string;
 /** Prefix a release-asset URL with the configured mirror when present. */
 export declare function resolveAssetUrl(config: ResolvedConfig, url: string): string;
 /**
@@ -73,9 +75,10 @@ export declare function pickExeAssetUrl(body: string): string;
  * when missing) and the desktop shortcut points at it. Safe to re-run.
  * @param config - resolved plugin configuration.
  * @param deps - host boundary to fake in tests.
+ * @param signal - cooperative cancellation for the download, when the caller owns one.
  * @returns what happened during this run.
  */
-export declare function ensureInstalled(config: ResolvedConfig, deps: InstallerDeps): Promise<InstallResult>;
+export declare function ensureInstalled(config: ResolvedConfig, deps: InstallerDeps, signal?: AbortSignal): Promise<InstallResult>;
 /**
  * Ensure a desktop `.url` shortcut opens the DSH web UI in the default
  * browser, borrowing the desktop exe's icon when that exe is installed.

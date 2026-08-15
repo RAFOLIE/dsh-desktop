@@ -27,6 +27,8 @@ export interface Config {
   autoUpdate?: boolean
   /** Optional mirror prefix for release-asset downloads, e.g. `https://ghproxy.com/`. */
   assetProxy?: string
+  /** Run the tool's missing-exe install as a background job (ctx.jobs) when available. */
+  backgroundInstall?: boolean
 }
 
 /** Configuration after defaults have been resolved. */
@@ -41,6 +43,7 @@ export interface ResolvedConfig {
   repoSlug: string
   autoUpdate: boolean
   assetProxy: string
+  backgroundInstall: boolean
 }
 
 /** Default install directory under %LOCALAPPDATA%. */
@@ -63,6 +66,7 @@ export const Config: z<Config> = z.object({
   repoSlug: z.string().default('RAFOLIE/dsh-desktop-windowos'),
   autoUpdate: z.boolean().default(true),
   assetProxy: z.string().default(''),
+  backgroundInstall: z.boolean().default(true),
 })
 
 /**
@@ -82,5 +86,6 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
     repoSlug: config.repoSlug ?? 'RAFOLIE/dsh-desktop-windowos',
     autoUpdate: config.autoUpdate ?? true,
     assetProxy: config.assetProxy ?? '',
+    backgroundInstall: config.backgroundInstall ?? true,
   }
 }

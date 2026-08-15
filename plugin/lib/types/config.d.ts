@@ -25,6 +25,8 @@ export interface Config {
     autoUpdate?: boolean;
     /** Optional mirror prefix for release-asset downloads, e.g. `https://ghproxy.com/`. */
     assetProxy?: string;
+    /** Run the tool's missing-exe install as a background job (ctx.jobs) when available. */
+    backgroundInstall?: boolean;
 }
 /** Configuration after defaults have been resolved. */
 export interface ResolvedConfig {
@@ -38,6 +40,7 @@ export interface ResolvedConfig {
     repoSlug: string;
     autoUpdate: boolean;
     assetProxy: string;
+    backgroundInstall: boolean;
 }
 /** Default install directory under %LOCALAPPDATA%. */
 export declare function defaultInstallDir(): string;

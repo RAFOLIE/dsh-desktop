@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.5.0 — 2026-08-14
+
+改进(插件):desktop_launch 对齐官方文档三大升级——后台安装、UI 卡片、免模型集成测试。
+
+- **后台安装**:`desktop_launch` 在 exe 缺失时改走 `ctx.jobs` 后台任务(kind `desktop`)——下载 exe → 刷新快捷方式 → 完成后自动启动,立即返回 `jobId` 供模型用标准 `job_output`/`job_list` 轮询;取消会中止进行中的 curl 下载并跳过启动。exe 已存在时仍是前台秒开;精简组合(无 jobs 服务/无 job controller)自动回退前台安装,新配置 `backgroundInstall`(默认开)可强制前台
+- **UI 卡片**:补齐 `presentCall`/`presentResult`/`output.presentationMeta` 投影——挂起态显示「启动 DSH 桌面端」execute 卡片,完成态按状态显示「桌面端已启动/后台安装已开始/仅支持 Windows」,回放可重现
+- **输出 schema 升级**:`{launched, exePath}` → `{status: launched|installing|windows-only, exePath?, jobId?}`,渲染文本指导模型轮询后台任务
+- **集成测试**:新增 6 个测试用真实 ToolRuntime + LocalJobRegistry + tool-jobs 组合免模型驱动完整工具流水线(含后台分支端到端:下载→jobId→completed→启动),共 22/22 全绿
+
+Improvement (plugin): desktop_launch aligns with the official docs' three upgrades — background install, UI cards, and model-free integration tests.
+
+- **Background install**: when the exe is missing, `desktop_launch` starts a `ctx.jobs` background job (kind `desktop`) — download exe → refresh shortcuts → auto-launch on completion — returning a `jobId` immediately for the model to poll via the standard `job_output`/`job_list` tools; cancellation aborts the in-flight curl download and skips the launch. An existing exe still launches in the foreground instantly; minimal compositions (no jobs service / no job controller) fall back to an inline install, and the new `backgroundInstall` config (default on) can force the foreground path
+- **UI cards**: adds the `presentCall`/`presentResult`/`output.presentationMeta` projections — a pending generic execute card ("启动 DSH 桌面端") and completion cards per status ("桌面端已启动" / "后台安装已开始" / "仅支持 Windows"), replayable
+- **Output schema**: `{launched, exePath}` → `{status: launched|installing|windows-only, exePath?, jobId?}` with render text that guides the model to poll the background job
+- **Integration tests**: 6 new tests drive the full tool pipeline without a model using the real ToolRuntime + LocalJobRegistry + tool-jobs composition (including the background branch end-to-end: download → jobId → completed → launched); 22/22 green
+
 ## v1.4.5 — 2026-08-15
 
 改进:未找到 DSH 时,「npm 全局安装」升级为一键主推荐。
