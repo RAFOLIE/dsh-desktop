@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import "./App.css";
 
@@ -10,41 +11,125 @@ type DshStatus =
   | { status: "notfound" }
   | { status: "error"; message: string };
 
+/** Rust→frontend payloads emitted on the `app-update` channel by update.rs.
+ *  `pending` is the frontend-only state before the first event arrives. */
+type AppUpdate =
+  | { state: "pending" }
+  | { state: "checking" }
+  | { state: "downloading"; from?: string; to?: string }
+  | { state: "done"; from?: string; to?: string }
+  | { state: "none" }
+  | { state: "failed"; message?: string };
+
+const WEBCHAT_URL = "http://127.0.0.1:3080/";
+
 /** Shell boot page: waits for DSH, then hands the whole window to the native
  *  webchat at http://127.0.0.1:3080/. After the replace, this page (and its
- *  Tauri IPC) is gone — all further shell behavior is Rust-side + tray. */
+ *  Tauri IPC) is gone — all further shell behavior is Rust-side + tray.
+ *  While the page lives it also narrates the app self-update via the pill
+ *  next to the top-left name: spinner → green check → version only. */
 function App() {
   const [status, setStatus] = useState<DshStatus>({ status: "starting" });
   const [customPath, setCustomPath] = useState("");
   const [pathError, setPathError] = useState("");
+  const [update, setUpdate] = useState<AppUpdate>({ state: "pending" });
+  const [checkVisible, setCheckVisible] = useState(false);
+  const [version, setVersion] = useState("");
 
   useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
+    let unlistenStatus: UnlistenFn | undefined;
+    let unlistenUpdate: UnlistenFn | undefined;
     let cancelled = false;
 
     (async () => {
-      unlisten = await listen<DshStatus>("dsh-status", (event) => {
-        const next = event.payload;
-        setStatus(next);
-        // Hand the window to the native webchat; replace() keeps Back from
-        // returning to this boot page.
-        if (next.status === "ready") {
-          window.location.replace("http://127.0.0.1:3080/");
-        }
+      unlistenStatus = await listen<DshStatus>("dsh-status", (event) => {
+        setStatus(event.payload);
+      });
+      unlistenUpdate = await listen<AppUpdate>("app-update", (event) => {
+        setUpdate(event.payload);
       });
       if (cancelled) {
-        unlisten();
+        unlistenStatus();
+        unlistenUpdate();
       }
     })();
+    getVersion().then(setVersion).catch(() => setVersion(""));
 
     return () => {
       cancelled = true;
-      unlisten?.();
+      unlistenStatus?.();
+      unlistenUpdate?.();
     };
   }, []);
 
+  // Fuse: if the update events never arrive (very old build, IPC hiccup),
+  // stop holding the handoff on `pending` — startup must never hang.
+  useEffect(() => {
+    if (update.state !== "pending") return;
+    const timer = setTimeout(() => setUpdate({ state: "none" }), 10_000);
+    return () => clearTimeout(timer);
+  }, [update.state]);
+
+  // The green check appears when the update lands and fades out by itself,
+  // leaving the (new) version behind in the pill.
+  useEffect(() => {
+    if (update.state === "done") {
+      setCheckVisible(true);
+      const timer = setTimeout(() => setCheckVisible(false), 1_800);
+      return () => clearTimeout(timer);
+    }
+    setCheckVisible(false);
+  }, [update]);
+
+  // Hand the window to the native webchat — but let a running update finish
+  // first so the pill's spinner→check story is actually seen. replace()
+  // keeps Back from returning to this boot page.
+  useEffect(() => {
+    if (status.status !== "ready") return;
+    const busy =
+      update.state === "pending" ||
+      update.state === "checking" ||
+      update.state === "downloading";
+    if (busy) return;
+    // After `done`, linger a beat so the check mark is visible before leaving.
+    const delay = update.state === "done" ? 2_300 : 0;
+    const timer = setTimeout(
+      () => window.location.replace(WEBCHAT_URL),
+      delay,
+    );
+    return () => clearTimeout(timer);
+  }, [status.status, update.state]);
+
+  const displayVersion =
+    update.state === "done" && update.to ? update.to : version;
+  const spinnerActive =
+    update.state === "pending" ||
+    update.state === "checking" ||
+    update.state === "downloading";
+
   return (
     <main className="boot">
+      <header className="app-header">
+        <span className="app-name">DeepSeek Harness</span>
+        <span className="version-pill" data-state={update.state}>
+          <span className="version-text">v{displayVersion}</span>
+          {spinnerActive && (
+            <span className="win-dots" aria-hidden="true">
+              <i /><i /><i /><i /><i /><i />
+            </span>
+          )}
+          {update.state === "done" && (
+            <svg
+              className={`check${checkVisible ? " show" : ""}`}
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5 6.5 12 13 4.5" />
+            </svg>
+          )}
+        </span>
+      </header>
+
       {status.status === "starting" && (
         <div className="state">
           <div className="spinner" aria-hidden="true" />
@@ -55,6 +140,11 @@ function App() {
           {status.method?.includes("npx") && (
             <div className="detail">首次运行需下载 DSH 包,可能需要几分钟,请耐心等待</div>
           )}
+          {update.state === "downloading" && (
+            <div className="detail">
+              正在更新应用 v{update.to ?? ""}…完成后自动进入
+            </div>
+          )}
         </div>
       )}
 
@@ -62,8 +152,14 @@ function App() {
         <div className="state">
           <div className="spinner" aria-hidden="true" />
           <div className="text">
-            已连接{status.attached ? "(附加到已有实例)" : ""},正在打开…
+            已连接{status.attached ? "(附加到已有实例)" : ""},
+            {update.state === "downloading"
+              ? "等待应用更新完成…"
+              : "正在打开…"}
           </div>
+          {update.state === "downloading" && (
+            <div className="detail">正在更新应用 v{update.to ?? ""}…完成后自动进入</div>
+          )}
         </div>
       )}
 

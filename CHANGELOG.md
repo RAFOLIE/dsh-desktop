@@ -1,6 +1,22 @@
 # Changelog
 
-## v1.5.0 — 2026-08-14
+## v1.5.1 — 2026-08-14
+
+改进:启动页左上角新增应用名 + 版本胶囊,应用自更新全程可见。
+
+- **版本胶囊**:启动页左上角显示「DeepSeek Harness」与椭圆包裹的版本号;窗口标题栏同步带上版本(进入 webchat 后仍可见)
+- **应用自更新**(新增,Rust 侧):每次启动并行检查 GitHub 最新 Release,有新版则下载换装(rename-aside,运行中安全),与插件更新逻辑同源
+- **更新指示**:更新期间版本号右侧显示 Win11 开机风格的绿色点状旋转圈(胶囊内);完成变为绿色对勾,约 1.8 秒后淡出,恢复纯版本号(显示新版本)
+- **更新优先展示**:DSH 就绪但更新仍在进行时,暂缓跳转 webchat,显示「正在更新应用…完成后自动进入」;无更新零等待,事件异常 10 秒保险丝放行
+
+Improvement: the boot page gains a top-left app name + version pill, and the app's self-update becomes visible.
+
+- **Version pill**: top-left shows "DeepSeek Harness" with an ellipse-wrapped version number; the window title bar carries the version too (visible after the webchat handoff)
+- **App self-update** (new, Rust side): each launch checks the latest GitHub Release in parallel and swaps the exe aside when one exists (rename-aside, safe while running) — same approach as the plugin updater
+- **Update indicator**: while updating, a green Windows 11 boot-style dotted spinner spins inside the pill next to the version; on completion it becomes a green check that fades out after ~1.8s, leaving the (new) version
+- **Update-first handoff**: when DSH is ready but an update is still in flight, the webchat handoff waits with a "正在更新应用…完成后自动进入" note; zero wait when there is no update, and a 10s fuse guarantees startup never hangs
+
+## v1.5.0 — 2026-08-14 — 2026-08-14
 
 改进(插件):desktop_launch 对齐官方文档三大升级——后台安装、UI 卡片、免模型集成测试。
 

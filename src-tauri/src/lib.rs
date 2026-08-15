@@ -4,6 +4,7 @@
 mod dsh;
 mod menu;
 mod monitor;
+mod update;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -223,11 +224,13 @@ pub fn run() {    tauri::Builder::default()
             });
 
             // DSH lifecycle (probe/spawn/wait) and the event monitor run on their
-            // own blocking threads; both share the AppHandle.
+            // own blocking threads; both share the AppHandle. The self-update
+            // check runs in parallel — the boot page's version pill narrates it.
             let lifecycle = app.handle().clone();
             std::thread::spawn(move || dsh::startup(lifecycle));
             let monitor_app = app.handle().clone();
             std::thread::spawn(move || monitor::run(monitor_app));
+            update::spawn_check(app.handle().clone());
 
             Ok(())
         })
