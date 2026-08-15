@@ -12,7 +12,7 @@
 
 DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeScript**。
 打开应用 → 自动拉起本机 DSH Web 服务 → 窗口直接显示原生 webchat → 托盘常驻,任务完成弹系统通知。
-交付物是**单个免安装裸 exe**(约 4.5 MB)。
+交付物是**单个免安装裸 exe**(约 4.4 MB)。
 
 **推荐用法**:在任意文件夹执行 `pnpm add @deepseek-ai/dsh`(或 `npm i @deepseek-ai/dsh`),把 exe 放进**同一文件夹的根目录**双击即可——应用自动发现旁边的 `node_modules\.bin\dsh.cmd`,启动零下载、零配置、不询问。
 
@@ -48,7 +48,7 @@ DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeSc
 dsh plugin --profile web add dsh-desktop-plugin
 ```
 
-重启 DSH 后插件自动把 exe 装到 `%LOCALAPPDATA%\Programs\dsh-desktop-windowos\` 并在桌面生成快捷方式「DeepSeek Harness」;对话里说“打开桌面应用”还能通过 `desktop_launch` 工具直接拉起。详见 [plugin/README.md](plugin/README.md)。
+重启 DSH 后插件自动把 exe 装到 `%LOCALAPPDATA%\Programs\dsh-desktop-windowos\`,并在桌面生成**两个**快捷方式——「DeepSeek Harness」(桌面应用)和「DeepSeek Harness Web」(浏览器打开前端);之后每次激活还会**自动升级** exe 到最新 Release(应用运行中也能安全替换)。对话里说“打开桌面应用”可通过 `desktop_launch` 工具直接拉起。首次运行 exe 会弹 SmartScreen(未签名),点「更多信息 → 仍要运行」即可。详见 [plugin/README.md](plugin/README.md)。
 
 **方式二:直接下载 exe**
 
@@ -84,6 +84,7 @@ src-tauri/src/
   dsh.rs             DSH 生命周期:探测 / spawn / 等就绪 / taskkill /T 退出清理
   monitor.rs         events.host WS 监听:running 边沿 + 两按钮通知 + 断线重连
   lib.rs             托盘、窗口 X=隐藏、single-instance、AUMID 注册
+plugin/              DSH 插件(npm: dsh-desktop-plugin):自动安装/升级 exe + 双快捷方式 + desktop_launch 工具
 icon-src/            图标源(DeepSeek 鲸鱼标,品牌蓝 #4D6BFE)
 ```
 
@@ -93,7 +94,7 @@ icon-src/            图标源(DeepSeek 鲸鱼标,品牌蓝 #4D6BFE)
 
 A Windows desktop shell for DeepSeek Harness (DSH), built with **Tauri v2 + React 18 + TypeScript**.
 Launch the app → it auto-starts the local DSH web service → the window shows the native webchat → tray-resident with system notifications on task completion.
-Ships as a **single portable bare exe** (~4.5 MB, no installer).
+Ships as a **single portable bare exe** (~4.4 MB, no installer).
 
 **Recommended setup**: run `pnpm add @deepseek-ai/dsh` (or `npm i @deepseek-ai/dsh`) in any folder, then drop the exe into **that folder's root** and double-click — the app auto-discovers the adjacent `node_modules\.bin\dsh.cmd`: zero download, zero config, no questions asked.
 
@@ -129,7 +130,7 @@ Not bundled with the exe:
 dsh plugin --profile web add dsh-desktop-plugin
 ```
 
-After restarting DSH, the plugin auto-installs the exe into `%LOCALAPPDATA%\Programs\dsh-desktop-windowos` and creates the desktop shortcut "DeepSeek Harness"; saying "open the desktop app" in chat launches it via the `desktop_launch` tool. See [plugin/README.md](plugin/README.md).
+After restarting DSH, the plugin auto-installs the exe into `%LOCALAPPDATA%\Programs\dsh-desktop-windowos` and creates **two** desktop shortcuts — "DeepSeek Harness" (the desktop app) and "DeepSeek Harness Web" (the web UI in a browser); each later activation also **auto-updates** the exe to the latest Release (safe even while the app is running). Saying "open the desktop app" in chat launches it via the `desktop_launch` tool. First run of the unsigned exe shows SmartScreen — click "More info → Run anyway". See [plugin/README.md](plugin/README.md).
 
 **Option B: download the exe directly**
 
