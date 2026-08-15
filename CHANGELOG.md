@@ -1,6 +1,20 @@
 # Changelog
 
-## v1.5.1 — 2026-08-14
+## v1.5.2 — 2026-08-14
+
+改进:应用更新后自动同步插件包版本,市场不再反复提示"重新下载"。
+
+- **背景**:pnpm 的供应链安全冷却期(minimumReleaseAge,约 26 小时)会拒绝或静默跳过刚发布的插件版本——市场点更新→pnpm 拿旧版→版本没变→继续提示→循环重下(dshmarket #13/#22 已确认此机制)
+- **修复**:应用自更新检查收敛后(无更新/更新完成),自动扫描所有**已装有** dsh-desktop-plugin 的 DSH profile,用 `dsh plugin add dsh-desktop-plugin@<应用版本> --config.minimumReleaseAge=0`(市场「立即更新」同款一次性旁路)把插件包对齐到应用版本线
+- 未安装插件的 profile 绝不主动安装;版本已齐时零 pnpm 调用;失败只记日志下次再试,不影响启动;同步日志写入 dsh.log
+
+Improvement: after the app updates, the npm plugin package syncs to the same version — the market stops offering a re-download loop.
+
+- **Background**: pnpm's supply-chain fresh-release hold (minimumReleaseAge, ~26h) rejects or silently skips a just-published plugin version — market update → pnpm keeps the old one → version unchanged → the market keeps offering → retry loop (confirmed by dshmarket issues #13/#22)
+- **Fix**: once the self-update check settles (none or done), the app scans every DSH profile that ALREADY has dsh-desktop-plugin and pins it to the app's version via `dsh plugin add dsh-desktop-plugin@<version> --config.minimumReleaseAge=0` (the same one-shot bypass the market's "update now" uses)
+- Profiles without the plugin are never touched; steady state spawns nothing; failures only log to dsh.log and retry next launch
+
+## v1.5.1 — 2026-08-14 — 2026-08-14
 
 改进:启动页左上角新增应用名 + 版本胶囊,应用自更新全程可见。
 

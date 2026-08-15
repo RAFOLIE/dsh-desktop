@@ -10,8 +10,11 @@ use std::path::Path;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::dsh;
+
 const REPO_SLUG: &str = "RAFOLIE/dsh-desktop-windowos";
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+const PLUGIN_NAME: &str = "dsh-desktop-plugin";
 
 /// Compare dotted numeric triples; positive when `a > b`.
 fn compare_versions(a: &str, b: &str) -> i32 {
@@ -117,6 +120,7 @@ fn run_check(app: &AppHandle) -> Result<(), String> {
     };
     if compare_versions(&to_version, &current) <= 0 {
         narrate(json!({ "state": "none" }));
+        sync_plugin_packages(&current);
         return Ok(());
     }
 
@@ -141,7 +145,119 @@ fn run_check(app: &AppHandle) -> Result<(), String> {
     let _ = std::fs::remove_file(&tmp);
 
     narrate(json!({ "state": "done", "from": current, "to": to_version }));
+    // The exe is on the new version now; bring the npm-installed plugin
+    // package onto the same line so the market stops offering (and pnpm's
+    // fresh-release hold keeps rejecting) an update.
+    sync_plugin_packages(&to_version);
     Ok(())
+}
+
+/// Append one line to the shared shell log beside the exe updater's output.
+fn log_line(line: &str) {
+    let base = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".to_string());
+    let path = std::path::PathBuf::from(base)
+        .join("dsh-desktop")
+        .join("dsh.log");
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        use std::io::Write;
+        let _ = writeln!(file, "{line}");
+    }
+}
+
+/// Run one shell command hidden, with CI=true (pnpm blocks forever on an
+/// interactive prompt without a TTY), logging a one-line outcome plus the
+/// output tail to dsh.log.
+fn run_logged(cmd: &str) -> bool {
+    let mut command = std::process::Command::new("cmd");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.raw_arg(format!("/S /C \"{cmd}\""));
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    {
+        command.arg("/C").arg(cmd);
+    }
+    command
+        .env("CI", "true")
+        .current_dir(std::env::var("USERPROFILE").unwrap_or_else(|_| ".".to_string()));
+    match command.output() {
+        Ok(output) => {
+            let ok = output.status.success();
+            let tail = String::from_utf8_lossy(&output.stdout);
+            let tail = tail.chars().rev().take(240).collect::<Vec<_>>();
+            let tail: String = tail.into_iter().rev().collect();
+            let err_tail = String::from_utf8_lossy(&output.stderr);
+            let err_tail = err_tail.chars().rev().take(240).collect::<Vec<_>>();
+            let err_tail: String = err_tail.into_iter().rev().collect();
+            log_line(&format!(
+                "[dsh-desktop] plugin sync {} (exit {}): {}{}",
+                if ok { "ok" } else { "FAILED" },
+                output.status.code().unwrap_or(-1),
+                tail.trim_end(),
+                if err_tail.trim().is_empty() { String::new() } else { format!(" | {err_tail}") },
+            ));
+            ok
+        }
+        Err(e) => {
+            log_line(&format!("[dsh-desktop] plugin sync spawn failed: {e}"));
+            false
+        }
+    }
+}
+
+/// Keep the npm-installed plugin package on the app's version line: for every
+/// DSH profile that ALREADY has `{PLUGIN_NAME}` installed, pin it to `target`
+/// via `dsh plugin add` with the one-shot pnpm fresh-release bypass — the
+/// same override dshmarket's "update now" uses. Profiles without the plugin
+/// are never touched (no silent installs), and steady state (versions equal)
+/// spawns nothing at all.
+fn sync_plugin_packages(target: &str) {
+    let home = std::env::var("DSH_HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    let profiles_root = Path::new(&home).join(".dsh").join("profiles");
+    let Ok(dirs) = std::fs::read_dir(&profiles_root) else {
+        return;
+    };
+    for entry in dirs.flatten() {
+        let profile = entry.file_name().to_string_lossy().to_string();
+        let manifest = entry
+            .path()
+            .join("node_modules")
+            .join(PLUGIN_NAME)
+            .join("package.json");
+        let Ok(text) = std::fs::read_to_string(&manifest) else {
+            continue;
+        };
+        let Ok(doc) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
+        let installed = doc["version"].as_str().unwrap_or_default();
+        if installed == target {
+            continue;
+        }
+        log_line(&format!(
+            "[dsh-desktop] syncing {PLUGIN_NAME} {installed} -> {target} in profile {profile}"
+        ));
+        let sub = format!("plugin --profile {profile} add {PLUGIN_NAME}@{target} --config.minimumReleaseAge=0");
+        match dsh::dsh_cli_command(&sub) {
+            Some(cmd) => {
+                run_logged(&cmd);
+            }
+            None => {
+                log_line("[dsh-desktop] plugin sync skipped: no dsh CLI found outside DSH_CMD");
+            }
+        }
+    }
 }
 
 /// Spawn the launch-time update check on its own thread. Never blocks and

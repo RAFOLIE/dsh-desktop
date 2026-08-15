@@ -144,6 +144,24 @@ fn candidates() -> Vec<Candidate> {
     list
 }
 
+/// Shell command string for invoking the dsh CLI with a subcommand (e.g.
+/// `plugin --profile web add pkg@ver`), resolved through the same local-first
+/// discovery as the launch chain. DSH_CMD is deliberately skipped: it is a
+/// raw command string that may carry its own `web` argument and cannot be
+/// reliably re-targeted. `None` when no usable dsh exists.
+pub(crate) fn dsh_cli_command(sub: &str) -> Option<String> {
+    if let Some(path) = custom_dsh_path() {
+        return Some(format!("\"{path}\" {sub}"));
+    }
+    if dsh_on_path() {
+        return Some(format!("dsh {sub}"));
+    }
+    if let Some((shim, _root)) = find_local_install() {
+        return Some(format!("\"{}\" {sub}", shim.display()));
+    }
+    None
+}
+
 /// The official zero-install command; its first run downloads 500+
 /// dependencies before booting.
 fn npx_candidate(cwd: String) -> Candidate {
