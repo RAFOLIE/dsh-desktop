@@ -1,5 +1,7 @@
 # dsh-desktop-plugin
 
+> **版本规则**:本插件与桌面应用共用**同一条版本线**(如插件 1.4.2 = 应用 v1.4.2);插件单独改进时版本号继续前进,始终 ≥ 应用版本。
+
 DSH 插件:安装并启动 [dsh-desktop-windowos](https://github.com/RAFOLIE/dsh-desktop-windowos) 桌面壳(DeepSeek Harness 的 Windows 托盘应用)。
 
 - 插件激活时自动确保桌面应用就绪:缺失则从 GitHub Releases 下载 exe 到 `%LOCALAPPDATA%\Programs\dsh-desktop-windowos\`,并在桌面创建/刷新**不带版本号**的快捷方式「DeepSeek Harness」;已存在则跳过下载
@@ -34,6 +36,8 @@ dsh plugin --profile web add dsh-desktop-plugin
 | repoSlug | RAFOLIE/dsh-desktop-windowos | exe 的 GitHub Release 来源 |
 
 # English
+
+> **Versioning rule**: this plugin shares **one version line** with the desktop app (plugin 1.4.2 = app v1.4.2); plugin-only improvements move the number forward, always ≥ the app version.
 
 DSH plugin that installs and launches [dsh-desktop-windowos](https://github.com/RAFOLIE/dsh-desktop-windowos) — the Windows tray shell for DeepSeek Harness.
 
