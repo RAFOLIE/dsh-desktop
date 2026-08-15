@@ -87,10 +87,12 @@ struct Candidate {
 }
 
 /// Build the launch chain, local-first. `DSH_CMD` (with optional `DSH_CWD`)
-/// replaces it entirely. Otherwise: global `dsh` on PATH, then a project-local
-/// `node_modules\.bin\dsh.cmd`; the npx download joins only when the user has
-/// picked "download" before (persisted). An empty chain means "no local DSH" —
-/// startup reports `notfound` and the boot page asks the user.
+/// leads but no longer replaces the chain — a stale override falls through to
+/// the saved custom path, the PATH-global `dsh` (found via `where dsh`,
+/// covering the npm global `dsh`/`dsh.cmd` pair), a project-local
+/// `node_modules\.bin\dsh.cmd`, and the npx download the user consented to.
+/// An empty chain means "no local DSH" — startup reports `notfound` and the
+/// boot page asks the user.
 /// The default working directory is the user profile — a neutral, writable
 /// dir that never depends on a repo location. A stale `DSH_CWD` pointing at a
 /// deleted directory falls back to the profile dir instead of failing every
@@ -101,17 +103,25 @@ fn candidates() -> Vec<Candidate> {
         .ok()
         .filter(|dir| Path::new(dir).is_dir())
         .unwrap_or_else(|| home.clone());
+    let mut list = Vec::new();
     if let Ok(cmd) = std::env::var("DSH_CMD") {
         if !cmd.trim().is_empty() {
-            return vec![Candidate {
+            list.push(Candidate {
                 label: "DSH_CMD".to_string(),
                 cmd,
-                cwd,
+                cwd: cwd.clone(),
                 window: DSH_CMD_WINDOW,
-            }];
+            });
         }
     }
-    let mut list = Vec::new();
+    if let Some(path) = custom_dsh_path() {
+        list.push(Candidate {
+            label: format!("自定义路径({path})"),
+            cmd: format!("\"{path}\" web"),
+            cwd: cwd.clone(),
+            window: GLOBAL_WINDOW,
+        });
+    }
     if dsh_on_path() {
         list.push(Candidate {
             label: "dsh web".to_string(),
@@ -179,9 +189,10 @@ fn find_local_install() -> Option<(PathBuf, PathBuf)> {
     })
 }
 
-/// User preferences persisted beside dsh.log. Only `preferNpx` today: set
-/// once the user picks "download", so later cold starts run npx directly
-/// instead of asking again. Best-effort — an unreadable file just reads false.
+/// User preferences persisted beside dsh.log: `preferNpx` set once the user
+/// picks "download" (later cold starts run npx directly), and `customDshPath`
+/// a user-entered dsh location that outlives the notfound dialog. Best-effort
+/// — an unreadable file just reads empty.
 fn settings_path() -> PathBuf {
     log_path()
         .parent()
@@ -189,19 +200,38 @@ fn settings_path() -> PathBuf {
         .join("settings.json")
 }
 
-fn prefer_npx() -> bool {
+fn read_settings() -> Value {
     std::fs::read_to_string(settings_path())
         .ok()
         .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-        .and_then(|v| v.get("preferNpx").and_then(|x| x.as_bool()))
+        .unwrap_or_else(|| json!({}))
+}
+
+fn write_settings(map: Value) {
+    let _ = std::fs::write(settings_path(), serde_json::to_string(&map).unwrap_or_default());
+}
+
+fn prefer_npx() -> bool {
+    read_settings()
+        .get("preferNpx")
+        .and_then(|x| x.as_bool())
         .unwrap_or(false)
 }
 
 fn save_prefer_npx(value: bool) {
-    let _ = std::fs::write(
-        settings_path(),
-        serde_json::to_string(&json!({ "preferNpx": value })).unwrap_or_default(),
-    );
+    let mut settings = read_settings();
+    settings["preferNpx"] = json!(value);
+    write_settings(settings);
+}
+
+/// User-entered dsh executable (dsh.cmd/dsh.exe) saved from the notfound
+/// dialog; `None` when unset or the file no longer exists (self-healing).
+fn custom_dsh_path() -> Option<String> {
+    read_settings()
+        .get("customDshPath")
+        .and_then(|x| x.as_str())
+        .map(str::to_string)
+        .filter(|path| Path::new(path).is_file())
 }
 
 /// Probe 3080 once with a real `host.describe` RPC; true if DSH answers healthy.
@@ -310,6 +340,26 @@ fn try_candidate(app: &AppHandle, candidate: &Candidate) -> Attempt {
         }
         std::thread::sleep(PROBE_INTERVAL);
     }
+}
+
+/// Frontend "使用此路径启动" from the notfound dialog: remember the
+/// user-entered dsh executable and retry startup with it leading the chain.
+/// Returns Err with a user-facing message when the path does not exist.
+pub fn set_custom_path(app: &AppHandle, raw: String) -> Result<(), String> {
+    let path = raw.trim().trim_matches('"').to_string();
+    if path.is_empty() {
+        return Err("路径不能为空".to_string());
+    }
+    if !Path::new(&path).is_file() {
+        return Err(format!("找不到文件:{path}(需要 dsh.cmd 或 dsh.exe 的完整路径)"));
+    }
+    let mut settings = read_settings();
+    settings["customDshPath"] = json!(path);
+    write_settings(settings);
+    teardown(app);
+    let app2 = app.clone();
+    std::thread::spawn(move || startup(app2));
+    Ok(())
 }
 
 /// Re-arm after a failure: tear down any stale owned subprocess, then startup.

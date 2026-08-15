@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.4.4 — 2026-08-15
+
+改进:启动页支持手动指定 DSH 路径,`DSH_CMD` 失效不再卡死启动。
+
+- 未找到 DSH 时,启动页新增**路径输入框**:粘贴已知安装位置(如 `E:\...\dsh.cmd`)即可启动并永久记住;路径失效时自动跳过,回到正常候选链
+- 本地检查顺序保持 `where dsh` 优先(覆盖 npm 全局 `dsh`/`dsh.cmd`)→ 应用/工作/用户目录的 `node_modules\.bin\dsh.cmd` → 已确认的 npx
+- `DSH_CMD` 环境变量从"替换整条链"改为**首个候选**——残留失效值(如已删除的旧目录)会自动降级到后续候选,不再卡在启动页(实测案例:旧 `E:\...\node_modules\.bin\dsh.cmd` 覆盖值导致无限启动)
+
+Improvement: manual DSH path entry on the boot page; a stale `DSH_CMD` no longer stalls startup.
+
+- When no DSH is found, the boot page gains a **path input**: paste a known install location (e.g. `E:\...\dsh.cmd`) to start and remember it; a dead saved path is skipped automatically, falling back to the normal chain
+- Local discovery order stays `where dsh` first (covers the npm-global `dsh`/`dsh.cmd`) → `node_modules\.bin\dsh.cmd` in exe/working/user dirs → consented npx
+- `DSH_CMD` now leads the chain instead of replacing it — stale overrides (e.g. a deleted `E:\...\node_modules\.bin\dsh.cmd`) fall through to later candidates instead of hanging the boot page
+
 ## v1.4.3 — 2026-08-15
 
 改进:托盘图标固定显示在任务栏,不再每次启动都被收进溢出区。

@@ -67,6 +67,22 @@ button:hover {
   background: #388bfd;
 }
 
+.path-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  font-size: 13px;
+  border: 1px solid #2c3140;
+  border-radius: 8px;
+  background: #0f1115;
+  color: #e6e6e6;
+}
+
+.path-input:focus {
+  outline: none;
+  border-color: #1f6feb;
+}
+
 .spinner {
   width: 28px;
   height: 28px;

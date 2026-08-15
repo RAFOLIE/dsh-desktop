@@ -28,6 +28,13 @@ fn dsh_download(app: AppHandle) {
     dsh::download_and_start(app);
 }
 
+/// Frontend-invoked custom dsh path from the notfound dialog: validates it
+/// exists, persists it, and retries startup with it leading the chain.
+#[tauri::command]
+fn dsh_custom_path(app: AppHandle, path: String) -> Result<(), String> {
+    dsh::set_custom_path(&app, path)
+}
+
 /// Frontend-invoked exit from the notfound choice.
 #[tauri::command]
 fn dsh_exit(app: AppHandle) {
@@ -128,7 +135,7 @@ pub fn run() {    tauri::Builder::default()
         }))
         .plugin(tauri_plugin_opener::init())
         .manage(dsh::DshState::new())
-        .invoke_handler(tauri::generate_handler![dsh_retry, dsh_download, dsh_exit])
+        .invoke_handler(tauri::generate_handler![dsh_retry, dsh_download, dsh_custom_path, dsh_exit])
         .setup(|app| {
             #[cfg(windows)]
             ensure_toast_aumid();

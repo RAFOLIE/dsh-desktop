@@ -15,6 +15,8 @@ type DshStatus =
  *  Tauri IPC) is gone — all further shell behavior is Rust-side + tray. */
 function App() {
   const [status, setStatus] = useState<DshStatus>({ status: "starting" });
+  const [customPath, setCustomPath] = useState("");
+  const [pathError, setPathError] = useState("");
 
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;
@@ -69,12 +71,27 @@ function App() {
         <div className="state">
           <div className="text error">未找到本机 DSH</div>
           <div className="detail">
-            已搜索 PATH、应用目录与用户目录,均未发现 DSH 安装
-            (node_modules\.bin\dsh.cmd)。请选择:
+            已搜索 PATH(where dsh,含 npm 全局 dsh/dsh.cmd)、应用目录与用户目录,均未发现 DSH 安装。请选择:
           </div>
           <button type="button" onClick={() => invoke("dsh_download")}>
             下载并启动(首次约几分钟)
           </button>
+          <input
+            className="path-input"
+            value={customPath}
+            placeholder="已知安装位置?粘贴 dsh.cmd 完整路径"
+            onChange={(event) => { setCustomPath(event.target.value); setPathError("") }}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              invoke("dsh_custom_path", { path: customPath })
+                .catch((error: string) => { setPathError(String(error)) })
+            }}
+          >
+            使用此路径启动
+          </button>
+          {pathError !== "" && <div className="detail">{pathError}</div>}
           <button type="button" onClick={() => invoke("dsh_retry")}>
             重新检测
           </button>
