@@ -1,6 +1,22 @@
 # Changelog
 
-## v1.5.6 — 2026-08-16
+## v1.5.7 — 2026-08-16
+
+修复:更新下载在 GitHub CDN 不通时静默失败(应用侧与插件侧同修)。
+
+- **根因**:GitHub 发行资产经 objects.githubusercontent.com 分发,本网络环境下时通时断——API 检查正常(能发现新版)、下载却 0 字节超时,失败后无任何提示直接进 webchat,用户以为"更新完了"实际版本没变,反复重开反复"更新"
+- **修复①(两级下载)**:资产下载直连失败后,自动依次尝试代理:环境变量 HTTPS_PROXY/https_proxy → 本机常见代理端口 7890/7891(先 1 秒探活);应用侧(Rust)与插件侧(Node)同修
+- **修复②(失败可见)**:更新失败不再静默——启动页显示「应用更新失败(网络),已跳过——下次启动自动重试,或稍后用托盘『检查前端更新』」,停留 4 秒再进入网页
+- **加固**:自动重启助手改用 `start "" "exe"` 引号稳妥模式并记录日志
+
+Fix: update downloads failed silently whenever GitHub's CDN was unreachable (fixed on both the app and plugin sides).
+
+- **Root cause**: release assets ship via objects.githubusercontent.com, intermittently blocked here — the API check succeeds (a new version is found) while the download times out at 0 bytes; the failure was swallowed and the app fell straight into the webchat, looking "updated" without changing
+- **Fix 1 (two-tier download)**: after a direct download fails, retry through proxies in order — HTTPS_PROXY/https_proxy env → common local ports 7890/7891 (1s liveness probe first); applied to both the Rust app updater and the Node plugin installer
+- **Fix 2 (visible failures)**: a failed update now shows a notice on the boot page for 4 seconds ("应用更新失败(网络),已跳过…") instead of silently proceeding
+- Hardening: the relaunch helper uses the quote-proof `start "" "exe"` pattern and logs its arming
+
+## v1.5.6 — 2026-08-16 — 2026-08-16
 
 改进:托盘菜单更名 + 新增「检查前端更新」。
 

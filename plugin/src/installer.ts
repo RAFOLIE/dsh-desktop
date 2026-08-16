@@ -5,6 +5,7 @@
 
 import { spawn } from 'node:child_process'
 import * as fs from 'node:fs'
+import * as net from 'node:net'
 import type { ResolvedConfig } from './config.js'
 
 /** Fakeable host boundary; every effect the installer can take. */
@@ -88,6 +89,68 @@ export function compareVersions(a: string, b: string): number {
   return 0
 }
 
+/** Proxy fallback candidates for release-asset downloads: environment
+ *  override first, then the common local proxy ports — GitHub's CDN is
+ *  intermittently unreachable directly while the local proxy sails through. */
+function proxyCandidates(): string[] {
+  const list: string[] = []
+  for (const key of ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy'] as const) {
+    const value = process.env[key]
+    if (value !== undefined && value !== '' && !list.includes(value)) list.push(value)
+  }
+  for (const port of ['7890', '7891']) {
+    const value = `http://127.0.0.1:${port}`
+    if (!list.includes(value)) list.push(value)
+  }
+  return list
+}
+
+/** 1s TCP probe so dead proxy ports don't burn curl timeouts. */
+function proxyAlive(proxy: string): Promise<boolean> {
+  return new Promise(resolve => {
+    const authority = proxy.replace(/^https?:\/\//, '').replace(/\/$/, '')
+    const idx = authority.lastIndexOf(':')
+    if (idx === -1) { resolve(false); return }
+    const port = Number(authority.slice(idx + 1))
+    if (!Number.isInteger(port) || port <= 0) { resolve(false); return }
+    const socket = net.connect({ host: authority.slice(0, idx), port })
+    const settle = (ok: boolean) => { socket.destroy(); resolve(ok) }
+    socket.setTimeout(1000, () => settle(false))
+    socket.once('connect', () => settle(true))
+    socket.once('error', () => settle(false))
+  })
+}
+
+/** One curl run to `tmp`; `proxy` adds -x when set. Aborting `signal` kills
+ *  the curl child so job cancellation stays prompt. */
+function curlTo(url: string, tmp: string, proxy?: string, signal?: AbortSignal): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '--silent', '--show-error', '--location', '--fail', '--retry', '2',
+      '--max-time', '150', '--user-agent', 'dsh-desktop-plugin', '--output', tmp, url,
+    ]
+    if (proxy !== undefined) args.push('-x', proxy)
+    const child = spawn('curl', args, { stdio: 'ignore', windowsHide: true })
+    const onAbort = () => { child.kill() }
+    if (signal !== undefined && !signal.aborted) signal.addEventListener('abort', onAbort, { once: true })
+    child.on('error', error => { fs.rmSync(tmp, { force: true }); reject(error) })
+    child.on('exit', code => {
+      signal?.removeEventListener('abort', onAbort)
+      if (signal?.aborted) {
+        fs.rmSync(tmp, { force: true })
+        reject(new Error(`download aborted: ${url}`))
+        return
+      }
+      if (code !== 0) {
+        fs.rmSync(tmp, { force: true })
+        reject(new Error(`curl exit ${code} for ${url}`))
+        return
+      }
+      try { resolve(fs.readFileSync(tmp)) } catch (error) { reject(error) } finally { fs.rmSync(tmp, { force: true }) }
+    })
+  })
+}
+
 /** Single-quote escape for PowerShell string literals. */
 function psQuote(value: string): string {
   return value.replaceAll('\'', '\'\'')
@@ -120,32 +183,28 @@ export function nodeDeps(): InstallerDeps {
       return response.text()
     },
     // Release assets are multi-MB; Node's fetch stalls on some networks where
-    // system curl succeeds, so route the binary download through curl.exe.
-    // An aborted signal kills the curl child so job cancellation is prompt.
-    fetchBytes: (url, signal) => new Promise((resolve, reject) => {
+    // system curl succeeds, so route the binary download through curl.exe —
+    // direct first, then through every reachable proxy candidate (GitHub's
+    // CDN is intermittently blocked while the local proxy sails through).
+    fetchBytes: async (url, signal) => {
       const tmp = `${process.env.TEMP ?? process.cwd()}\\dsh-desktop-download-${process.pid}-${Date.now()}.exe`
-      const child = spawn('curl', [
-        '--silent', '--show-error', '--location', '--fail', '--retry', '2',
-        '--max-time', '150', '--user-agent', 'dsh-desktop-plugin', '--output', tmp, url,
-      ], { stdio: 'ignore', windowsHide: true })
-      const onAbort = () => { child.kill() }
-      if (signal !== undefined && !signal.aborted) signal.addEventListener('abort', onAbort, { once: true })
-      child.on('error', error => { fs.rmSync(tmp, { force: true }); reject(error) })
-      child.on('exit', code => {
-        signal?.removeEventListener('abort', onAbort)
-        if (signal?.aborted) {
-          fs.rmSync(tmp, { force: true })
-          reject(new Error(`download aborted: ${url}`))
-          return
+      try {
+        try {
+          return await curlTo(url, tmp, undefined, signal)
+        } catch (directError) {
+          if (signal?.aborted) throw directError
+          for (const proxy of await Promise.all(proxyCandidates().map(async p => [p, await proxyAlive(p)] as const))) {
+            if (!proxy[1]) continue
+            try {
+              return await curlTo(url, tmp, proxy[0], signal)
+            } catch { /* try the next candidate */ }
+          }
+          throw directError
         }
-        if (code !== 0) {
-          fs.rmSync(tmp, { force: true })
-          reject(new Error(`curl exit ${code} for ${url}`))
-          return
-        }
-        try { resolve(fs.readFileSync(tmp)) } catch (error) { reject(error) } finally { fs.rmSync(tmp, { force: true }) }
-      })
-    }),
+      } finally {
+        fs.rmSync(tmp, { force: true })
+      }
+    },
     createShortcut: (exePath, workDir, name) => new Promise((resolve, reject) => {
       const script = [
         '$ws = New-Object -ComObject WScript.Shell',

@@ -93,8 +93,11 @@ function App() {
       update.state === "checking" ||
       update.state === "downloading";
     if (busy) return;
+    // `done`: the Rust side restarts onto the new exe; navigation is only
+    // the fallback. `failed`: show why before handing off (used to be a
+    // silent swallow — "updated" that never happened).
     const delay =
-      update.state === "done" ? 8_000 : 0;
+      update.state === "done" ? 8_000 : update.state === "failed" ? 4_000 : 0;
     const timer = setTimeout(
       () => window.location.replace(WEBCHAT_URL),
       delay,
@@ -150,6 +153,11 @@ function App() {
           {update.state === "done" && (
             <div className="detail">已更新到 v{update.to ?? ""},正在自动重启…</div>
           )}
+          {update.state === "failed" && (
+            <div className="detail">
+              应用更新失败(网络),已跳过——下次启动自动重试,或稍后用托盘「检查前端更新」
+            </div>
+          )}
         </div>
       )}
 
@@ -169,6 +177,11 @@ function App() {
           )}
           {update.state === "done" && (
             <div className="detail">新版本 v{update.to ?? ""} 已就绪,应用即将自动重启生效</div>
+          )}
+          {update.state === "failed" && update.message !== undefined && (
+            <div className="detail">
+              应用更新失败(网络),已跳过——下次启动自动重试,或稍后用托盘「检查前端更新」
+            </div>
           )}
         </div>
       )}

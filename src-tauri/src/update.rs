@@ -58,10 +58,52 @@ fn parse_asset_version(name: &str) -> Option<&str> {
     ok.then_some(version)
 }
 
-/// Download a release asset with system curl. Multi-MB binaries stall in some
-/// HTTP clients on this network where curl succeeds — the plugin's installer
-/// uses the exact same recipe.
-fn download_with_curl(url: &str, dest: &Path) -> std::io::Result<()> {
+/// Proxy candidates for the asset-download fallback: an explicit environment
+/// override first, then the common local proxy ports (GitHub's release CDN is
+/// intermittently unreachable directly on this network while the local proxy
+/// sails through).
+fn proxy_candidates() -> Vec<String> {
+    let mut list = Vec::new();
+    for key in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"] {
+        if let Ok(value) = std::env::var(key) {
+            if !value.is_empty() && !list.contains(&value) {
+                list.push(value);
+            }
+        }
+    }
+    for port in ["7890", "7891"] {
+        let value = format!("http://127.0.0.1:{port}");
+        if !list.contains(&value) {
+            list.push(value);
+        }
+    }
+    list
+}
+
+/// 1-second TCP probe so dead proxy ports don't burn curl timeouts.
+fn proxy_alive(proxy: &str) -> bool {
+    let authority = proxy
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_end_matches('/');
+    let Some((host, port)) = authority.rsplit_once(':') else {
+        return false;
+    };
+    let Ok(port) = port.parse::<u16>() else {
+        return false;
+    };
+    use std::net::ToSocketAddrs;
+    let Ok(mut addrs) = (host, port).to_socket_addrs() else {
+        return false;
+    };
+    match addrs.next() {
+        Some(addr) => std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(1)).is_ok(),
+        None => false,
+    }
+}
+
+/// One curl run; `proxy` adds `-x` when set.
+fn curl_to(url: &str, dest: &Path, proxy: Option<&str>) -> std::io::Result<()> {
     let mut command = std::process::Command::new("curl");
     command
         .args([
@@ -79,6 +121,9 @@ fn download_with_curl(url: &str, dest: &Path) -> std::io::Result<()> {
         ])
         .arg(dest)
         .arg(url);
+    if let Some(proxy) = proxy {
+        command.arg("-x").arg(proxy);
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -92,6 +137,29 @@ fn download_with_curl(url: &str, dest: &Path) -> std::io::Result<()> {
     }
 }
 
+/// Download a release asset with system curl, direct first and then through
+/// every reachable proxy candidate — a direct-only download fails silently
+/// for the user whenever GitHub's CDN is blocked on the current network.
+fn download_with_curl(url: &str, dest: &Path) -> std::io::Result<()> {
+    if curl_to(url, dest, None).is_ok() {
+        return Ok(());
+    }
+    for proxy in proxy_candidates() {
+        if !proxy_alive(&proxy) {
+            continue;
+        }
+        log_line(&format!(
+            "[dsh-desktop] direct asset download failed; retrying via proxy {proxy}"
+        ));
+        if curl_to(url, dest, Some(&proxy)).is_ok() {
+            return Ok(());
+        }
+    }
+    Err(std::io::Error::other(format!(
+        "all download attempts failed for {url}"
+    )))
+}
+
 /// Relaunch the app onto the freshly swapped exe. A detached helper waits for
 /// this process to exit (releasing the single-instance lock), then starts the
 /// new exe. The exit skips DSH teardown on purpose: a running webchat backend
@@ -101,8 +169,11 @@ fn relaunch_app(exe: &Path) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        // `start "" "path"` is the quote-proof way to launch a path with
+        // spaces; after /S strips the outer quotes the helper reads:
+        //   timeout /t 3 /nobreak >nul & start "" "C:\...\app.exe"
         command.raw_arg(format!(
-            "/S /C \"timeout /t 3 /nobreak >nul & \"\"{}\"\"\"",
+            "/S /C \"timeout /t 3 /nobreak >nul & start \"\" \"{}\"\"",
             exe.display()
         ));
         command.creation_flags(CREATE_NO_WINDOW);
@@ -113,10 +184,11 @@ fn relaunch_app(exe: &Path) {
             .arg("-c")
             .arg(format!("sleep 3 && '{}'", exe.display()));
     }
-    if let Err(e) = command.spawn() {
-        log_line(&format!(
+    match command.spawn() {
+        Ok(_) => log_line("[dsh-desktop] relaunch helper armed (starts the new exe in ~3s)"),
+        Err(e) => log_line(&format!(
             "[dsh-desktop] relaunch helper failed ({e}); the new version activates on next manual launch"
-        ));
+        )),
     }
 }
 
