@@ -11,6 +11,13 @@ edition = "2021"
 name = "dsh_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+
+[features]
+# 发布构建需显式声明 custom-protocol: tauri 的 build script 以 dev = !custom_protocol
+# 判定模式,缺省时 release 也会回退到 devUrl(http://localhost:1420),webview 显示
+# 连接被拒绝而不是应用界面(直接 cargo build --release 必现)。
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
