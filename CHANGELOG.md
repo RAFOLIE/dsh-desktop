@@ -1,6 +1,18 @@
 # Changelog
 
-## v1.5.11 — 2026-08-16
+## v1.5.12 — 2026-08-16
+
+加固:更新失败全程可见 + 卡死路由快速放弃。
+
+- curl 增加 `--speed-time 30 --speed-limit 1024`:低于 1KB/s 持续 30 秒即判死放弃该路由(今天实测"连上但卡死"的直连会烧满 120 秒)
+- 启动检查/托盘检查的**任何失败现在写入 dsh.log**(原先只 eprintln,GUI 程序里不可见,导致无声失败难排查)
+
+Hardening: visible update failures and fast stall abandonment.
+
+- curl gains `--speed-time 30 --speed-limit 1024` — a route flowing under 1KB/s for 30s is abandoned instead of burning the full 120s
+- Every launch/tray check failure now lands in dsh.log (was eprintln-only, invisible in a GUI app)
+
+## v1.5.11 — 2026-08-16 — 2026-08-16
 
 改进:更新下载链覆盖三类网络用户(国外直连/国内镜像/代理探测),镜像传输带完整性校验。
 

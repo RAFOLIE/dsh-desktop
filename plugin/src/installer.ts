@@ -181,7 +181,7 @@ function curlRoute(route: DownloadRoute, url: string, tmp: string, signal?: Abor
   return new Promise((resolve, reject) => {
     const args = [
       '--silent', '--show-error', '--location', '--fail', '--retry', '1',
-      '--connect-timeout', '8', '--max-time', '120',
+      '--connect-timeout', '8', '--speed-time', '30', '--speed-limit', '1024', '--max-time', '120',
       '--user-agent', 'dsh-desktop-plugin', '--output', tmp, routeUrl(route, url),
     ]
     if (route.kind === 'proxy') args.push('-x', route.url)

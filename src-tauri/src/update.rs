@@ -152,6 +152,10 @@ fn curl_route(url: &str, dest: &Path, route: &Route) -> std::io::Result<()> {
         "1",
         "--connect-timeout",
         "8",
+        "--speed-time",
+        "30",
+        "--speed-limit",
+        "1024",
         "--max-time",
         "120",
         "--user-agent",
@@ -531,7 +535,7 @@ fn sync_plugin_packages() {
 pub fn spawn_check(app: AppHandle) {
     std::thread::spawn(move || {
         if let Err(message) = run_check(&app, false) {
-            eprintln!("[dsh-desktop] self-update failed: {message}");
+            log_line(&format!("[dsh-desktop] self-update failed: {message}"));
             let _ = app.emit("app-update", json!({ "state": "failed", "message": message }));
         }
     });
@@ -547,7 +551,7 @@ pub fn check_now(app: AppHandle) {
         let result = run_check(&app, true);
         CHECK_IN_FLIGHT.store(false, Ordering::SeqCst);
         if let Err(message) = result {
-            eprintln!("[dsh-desktop] on-demand update check failed: {message}");
+            log_line(&format!("[dsh-desktop] on-demand update check failed: {message}"));
             let _ = app.emit("app-update", json!({ "state": "failed", "message": message }));
             toast(&format!("检查前端更新失败:{message}"));
         }
