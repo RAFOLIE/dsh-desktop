@@ -82,8 +82,10 @@ function App() {
   }, [update]);
 
   // Hand the window to the native webchat — but let a running update finish
-  // first so the pill's spinner→check story is actually seen. replace()
-  // keeps Back from returning to this boot page.
+  // first so the pill's spinner→check story is actually seen. After `done`
+  // the Rust side restarts the app onto the new exe (the running process
+  // predates the fix); navigation here is only the fallback if that restart
+  // never arrives. replace() keeps Back from returning to this boot page.
   useEffect(() => {
     if (status.status !== "ready") return;
     const busy =
@@ -91,8 +93,8 @@ function App() {
       update.state === "checking" ||
       update.state === "downloading";
     if (busy) return;
-    // After `done`, linger a beat so the check mark is visible before leaving.
-    const delay = update.state === "done" ? 2_300 : 0;
+    const delay =
+      update.state === "done" ? 8_000 : 0;
     const timer = setTimeout(
       () => window.location.replace(WEBCHAT_URL),
       delay,
@@ -145,6 +147,9 @@ function App() {
               正在更新应用 v{update.to ?? ""}…完成后自动进入
             </div>
           )}
+          {update.state === "done" && (
+            <div className="detail">已更新到 v{update.to ?? ""},正在自动重启…</div>
+          )}
         </div>
       )}
 
@@ -155,10 +160,15 @@ function App() {
             已连接{status.attached ? "(附加到已有实例)" : ""},
             {update.state === "downloading"
               ? "等待应用更新完成…"
-              : "正在打开…"}
+              : update.state === "done"
+                ? "新版本已就绪,自动重启中…"
+                : "正在打开…"}
           </div>
           {update.state === "downloading" && (
             <div className="detail">正在更新应用 v{update.to ?? ""}…完成后自动进入</div>
+          )}
+          {update.state === "done" && (
+            <div className="detail">新版本 v{update.to ?? ""} 已就绪,应用即将自动重启生效</div>
           )}
         </div>
       )}

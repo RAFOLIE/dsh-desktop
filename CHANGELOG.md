@@ -1,6 +1,20 @@
 # Changelog
 
-## v1.5.3 — 2026-08-16
+## v1.5.4 — 2026-08-16
+
+改进:更新完成后应用**自动重启**,新版本即刻生效。
+
+- **背景**:自动更新换的是磁盘上的 exe,正在运行的进程仍是旧代码(窗口的拖放等设置在创建窗口时已固定)——旧版必须完全退出重开才能用上新功能,托盘「重启 DSH」只重启后端帮不上忙
+- **修复**:更新完成(绿勾展示后)应用自动重启到新 exe:分离的辅助进程等旧进程退出(释放单实例锁)后拉起新 exe;退出时**不**停 DSH 后端,新实例直接附加,网页聊天无感续连
+- 更新只发生在启动时,自动重启永远在"刚打开应用"阶段,绝不会打断进行中的对话;重启失败时启动页 8 秒兜底直接进入网页
+
+Improvement: the app now **auto-restarts** after an update so the new build takes effect immediately.
+
+- **Background**: the auto-update swaps the exe on disk while the running process keeps the old code (window-level settings like drag-drop are fixed at window creation) — the fix only activated after a full manual restart, which made the tray "重启 DSH" (backend-only) useless for this
+- **Fix**: once the update lands (after the green check), the app relaunches onto the new exe: a detached helper waits for the old process to exit (releasing the single-instance lock) and starts the new build; the exit deliberately skips DSH teardown so the new instance attaches to the still-running webchat
+- Updates only ever run at launch, so the auto-restart never interrupts an ongoing conversation; if the restart fails, the boot page falls back to the webchat after 8 seconds
+
+## v1.5.3 — 2026-08-16 — 2026-08-16
 
 修复:桌面端无法拖放文件进前端(浏览器正常)。
 

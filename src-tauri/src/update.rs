@@ -78,6 +78,34 @@ fn download_with_curl(url: &str, dest: &Path) -> std::io::Result<()> {
     }
 }
 
+/// Relaunch the app onto the freshly swapped exe. A detached helper waits for
+/// this process to exit (releasing the single-instance lock), then starts the
+/// new exe. The exit skips DSH teardown on purpose: a running webchat backend
+/// stays up and the new instance attaches to it instead of respawning.
+fn relaunch_app(exe: &Path) {
+    let mut command = std::process::Command::new("cmd");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.raw_arg(format!(
+            "/S /C \"timeout /t 3 /nobreak >nul & \"\"{}\"\"\"",
+            exe.display()
+        ));
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    {
+        command
+            .arg("-c")
+            .arg(format!("sleep 3 && '{}'", exe.display()));
+    }
+    if let Err(e) = command.spawn() {
+        log_line(&format!(
+            "[dsh-desktop] relaunch helper failed ({e}); the new version activates on next manual launch"
+        ));
+    }
+}
+
 /// The whole launch-time flow; each step narrates to the boot page.
 fn run_check(app: &AppHandle) -> Result<(), String> {
     let current = app.package_info().version.to_string();
@@ -149,6 +177,16 @@ fn run_check(app: &AppHandle) -> Result<(), String> {
     // package onto the same line so the market stops offering (and pnpm's
     // fresh-release hold keeps rejecting) an update.
     sync_plugin_packages(&to_version);
+    // The running process still has the old code (e.g. the window's drag-drop
+    // settings were fixed at build time), so restart onto the new exe. The
+    // pause lets the pill's green check land first; updates only ever happen
+    // at launch, so this never interrupts an ongoing chat.
+    log_line(&format!(
+        "[dsh-desktop] exe updated {current} -> {to_version}; restarting onto the new build"
+    ));
+    std::thread::sleep(Duration::from_secs(2));
+    relaunch_app(&exe);
+    app.exit(0);
     Ok(())
 }
 
