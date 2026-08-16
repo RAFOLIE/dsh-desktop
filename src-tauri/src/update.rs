@@ -169,11 +169,13 @@ fn relaunch_app(exe: &Path) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // `start "" "path"` is the quote-proof way to launch a path with
-        // spaces; after /S strips the outer quotes the helper reads:
-        //   timeout /t 3 /nobreak >nul & start "" "C:\...\app.exe"
+        // `ping -n 4` is the quote-proof, PATH-proof ~3s delay (cmd's
+        // builtin `timeout` loses to a GNU timeout.exe on some PATHs);
+        // `start "" "path"` is the safe launcher for spaced paths. After /S
+        // strips the outer quotes the helper reads:
+        //   ping -n 4 127.0.0.1 >nul & start "" "C:\...\app.exe"
         command.raw_arg(format!(
-            "/S /C \"timeout /t 3 /nobreak >nul & start \"\" \"{}\"\"",
+            "/S /C \"ping -n 4 127.0.0.1 >nul & start \"\" \"{}\"\"",
             exe.display()
         ));
         command.creation_flags(CREATE_NO_WINDOW);
@@ -268,17 +270,14 @@ fn run_check(app: &AppHandle, on_demand: bool) -> Result<(), String> {
     let _ = std::fs::remove_file(&tmp);
 
     narrate(json!({ "state": "done", "from": current, "to": to_version }));
+    // The running process still has the old code (e.g. the window's drag-drop
+    // settings were fixed at build time), so restart onto the new exe. The
+    // plugin-package sync deliberately does NOT run here — a slow or hung
+    // pnpm must never sit between the swap and the restart. The new
+    // process's own launch check (state `none`) performs the sync instead.
     if on_demand {
         toast(&format!("已更新到 v{to_version},正在重启…"));
     }
-    // The exe is on the new version now; bring the npm-installed plugin
-    // package onto the same line so the market stops offering (and pnpm's
-    // fresh-release hold keeps rejecting) an update.
-    sync_plugin_packages(&to_version);
-    // The running process still has the old code (e.g. the window's drag-drop
-    // settings were fixed at build time), so restart onto the new exe. The
-    // pause lets the pill's green check land first; updates only ever happen
-    // at launch, so this never interrupts an ongoing chat.
     log_line(&format!(
         "[dsh-desktop] exe updated {current} -> {to_version}; restarting onto the new build"
     ));
@@ -308,8 +307,9 @@ fn log_line(line: &str) {
 }
 
 /// Run one shell command hidden, with CI=true (pnpm blocks forever on an
-/// interactive prompt without a TTY), logging a one-line outcome plus the
-/// output tail to dsh.log.
+/// interactive prompt without a TTY). Bounded by a hard kill at 120s — a
+/// hung pnpm must never stall anything downstream (it once sat between the
+/// exe swap and the restart).
 fn run_logged(cmd: &str) -> bool {
     let mut command = std::process::Command::new("cmd");
     #[cfg(windows)]
@@ -325,27 +325,35 @@ fn run_logged(cmd: &str) -> bool {
     command
         .env("CI", "true")
         .current_dir(std::env::var("USERPROFILE").unwrap_or_else(|_| ".".to_string()));
-    match command.output() {
-        Ok(output) => {
-            let ok = output.status.success();
-            let tail = String::from_utf8_lossy(&output.stdout);
-            let tail = tail.chars().rev().take(240).collect::<Vec<_>>();
-            let tail: String = tail.into_iter().rev().collect();
-            let err_tail = String::from_utf8_lossy(&output.stderr);
-            let err_tail = err_tail.chars().rev().take(240).collect::<Vec<_>>();
-            let err_tail: String = err_tail.into_iter().rev().collect();
-            log_line(&format!(
-                "[dsh-desktop] plugin sync {} (exit {}): {}{}",
-                if ok { "ok" } else { "FAILED" },
-                output.status.code().unwrap_or(-1),
-                tail.trim_end(),
-                if err_tail.trim().is_empty() { String::new() } else { format!(" | {err_tail}") },
-            ));
-            ok
-        }
-        Err(e) => {
-            log_line(&format!("[dsh-desktop] plugin sync spawn failed: {e}"));
-            false
+    let Ok(mut child) = command.spawn() else {
+        log_line(&format!("[dsh-desktop] plugin sync spawn failed: {cmd}"));
+        return false;
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(120);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let ok = status.success();
+                log_line(&format!(
+                    "[dsh-desktop] plugin sync {} (exit {})",
+                    if ok { "ok" } else { "FAILED" },
+                    status.code().unwrap_or(-1),
+                ));
+                return ok;
+            }
+            Ok(None) => {
+                if std::time::Instant::now() > deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    log_line("[dsh-desktop] plugin sync timed out after 120s (killed); retried next launch");
+                    return false;
+                }
+                std::thread::sleep(Duration::from_millis(500));
+            }
+            Err(e) => {
+                log_line(&format!("[dsh-desktop] plugin sync wait failed: {e}"));
+                return false;
+            }
         }
     }
 }

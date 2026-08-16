@@ -1,6 +1,20 @@
 # Changelog
 
-## v1.5.7 — 2026-08-16
+## v1.5.8 — 2026-08-16
+
+加固:自动重启链路三处防御性修复(真机排查 1.5.6→1.5.7 更新不生效时发现)。
+
+- **重启助手换延时实现**:`timeout /t` 在部分 PATH 下被 GNU timeout.exe 抢占导致助手秒死,改用 `ping -n 4`(永远指向 System32)+ `start "" "exe"` 引号稳妥启动(两种形式均已单独验证)
+- **插件包同步移出更新路径**:换装完成后立即重启,同步交给新进程启动时的检查路径——挂死的 pnpm 再也不可能堵在"换装"和"重启"之间
+- **同步加 120 秒硬超时**:超时杀进程记日志,下次启动重试
+
+Hardening: three defensive fixes around the auto-restart chain (found while live-debugging a 1.5.6→1.5.7 update that never activated).
+
+- The relaunch helper's `timeout /t` delay loses to a GNU timeout.exe on some PATHs and dies instantly; it now uses `ping -n 4` (always System32) with the `start "" "exe"` launcher (both forms verified standalone)
+- The plugin-package sync no longer runs between the exe swap and the restart — the new process's launch check performs it, so a hung pnpm can never stall the restart
+- The sync gains a 120s hard kill timeout with a logged retry-next-launch
+
+## v1.5.7 — 2026-08-16 — 2026-08-16
 
 修复:更新下载在 GitHub CDN 不通时静默失败(应用侧与插件侧同修)。
 
