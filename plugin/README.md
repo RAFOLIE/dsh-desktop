@@ -38,7 +38,7 @@ dsh plugin --profile web add dsh-desktop-plugin
 
 # English
 
-> **Versioning rule**: this plugin shares **one version line** with the desktop app (plugin 1.5.8 = app v1.5.8); plugin-only improvements move the number forward, always ≥ the app version.
+> **Versioning rule**: npm publishes are on-demand: this package ships only when the plugin itself changes (currently 1.5.8); the app version advances independently and aligns installed plugins to npm latest.
 
 DSH plugin that installs and launches [dsh-desktop-windowos](https://github.com/RAFOLIE/dsh-desktop-windowos) — the Windows tray shell for DeepSeek Harness.
 

@@ -1,6 +1,18 @@
 # Changelog
 
-## v1.5.8 — 2026-08-16
+## v1.5.9 — 2026-08-16
+
+改进:应用与插件 npm 版本线解耦 + 合并社区 PR #1。
+
+- **版本策略变更**:应用版本自由前进(本版起 GitHub Release 即完成发布);**插件 npm 包仅在功能变更时发布**,不再逐版对齐——桌面端启动时自动把已装插件对齐 **npm 最新版**(只升不降,而非应用版本号)
+- **PR #1(q6913781,已合并)**:①Cargo.toml 显式声明 `custom-protocol` feature——修复手动 `cargo build --release` 以 dev 模式启动(webview 连 localhost:1422 被拒);②`ready` 事件 4 秒内重发 10 次——修复附加模式下事件早于启动页监听器注册被丢、卡死在"正在启动…"的竞态
+
+Improvement: app and plugin npm version lines decouple; community PR #1 merged.
+
+- **Versioning change**: the app version now advances freely (a GitHub Release completes a publish); **the plugin's npm package ships only when the plugin actually changes** — the app now aligns installed plugins to **npm latest** (upgrade-only), not to the app's own version
+- **PR #1 (q6913781, merged)**: declares the `custom-protocol` feature (fixes manual `cargo build --release` booting in dev mode, webview refusing localhost:1420) and re-emits `ready` for 4s (fixes the boot page missing the one-shot event and hanging on "正在启动…")
+
+## v1.5.8 — 2026-08-16 — 2026-08-16
 
 加固:自动重启链路三处防御性修复(真机排查 1.5.6→1.5.7 更新不生效时发现)。
 

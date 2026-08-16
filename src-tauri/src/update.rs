@@ -242,7 +242,7 @@ fn run_check(app: &AppHandle, on_demand: bool) -> Result<(), String> {
         if on_demand {
             toast(&format!("前端已是最新版本 v{current}"));
         }
-        sync_plugin_packages(&current);
+        sync_plugin_packages();
         return Ok(());
     }
 
@@ -358,13 +358,31 @@ fn run_logged(cmd: &str) -> bool {
     }
 }
 
-/// Keep the npm-installed plugin package on the app's version line: for every
-/// DSH profile that ALREADY has `{PLUGIN_NAME}` installed, pin it to `target`
-/// via `dsh plugin add` with the one-shot pnpm fresh-release bypass — the
-/// same override dshmarket's "update now" uses. Profiles without the plugin
-/// are never touched (no silent installs), and steady state (versions equal)
-/// spawns nothing at all.
-fn sync_plugin_packages(target: &str) {
+/// The plugin's npm latest version. The app and the plugin share a version
+/// line only historically — npm publishes are on-demand now, so the sync
+/// target is whatever npm actually has, never the app's own version (which
+/// usually runs ahead).
+fn npm_latest_plugin_version() -> Option<String> {
+    let response = ureq::get(&format!("https://registry.npmjs.org/{PLUGIN_NAME}"))
+        .set("Accept", "application/vnd.npm.install-v1+json")
+        .timeout(Duration::from_secs(8))
+        .call()
+        .ok()?;
+    let doc: serde_json::Value = response.into_json().ok()?;
+    doc["dist-tags"]["latest"].as_str().map(str::to_string)
+}
+
+/// Keep the npm-installed plugin package on npm's latest: for every DSH
+/// profile that ALREADY has `{PLUGIN_NAME}` installed, pin it to the npm
+/// latest via `dsh plugin add` with the one-shot pnpm fresh-release bypass —
+/// the same override dshmarket's "update now" uses. Profiles without the
+/// plugin are never touched (no silent installs), and steady state (versions
+/// equal) spawns nothing at all.
+fn sync_plugin_packages() {
+    let Some(target) = npm_latest_plugin_version() else {
+        log_line("[dsh-desktop] plugin sync skipped: npm latest unavailable");
+        return;
+    };
     let home = std::env::var("DSH_HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_default();
@@ -386,7 +404,7 @@ fn sync_plugin_packages(target: &str) {
             continue;
         };
         let installed = doc["version"].as_str().unwrap_or_default();
-        if installed == target {
+        if installed == target || compare_versions(installed, &target) >= 0 {
             continue;
         }
         log_line(&format!(
