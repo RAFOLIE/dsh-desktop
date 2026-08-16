@@ -160,6 +160,13 @@ pub fn run() {    tauri::Builder::default()
             )
             .title("DeepSeek Harness")
             .inner_size(1280.0, 800.0)
+            // WebView2's default drag-drop handler swallows file drops before
+            // the page sees them, so HTML5 drag-and-drop (image attachments)
+            // only works with the handler disabled — the tauri-documented
+            // requirement for browser-parity dnd on Windows. Clipboard access
+            // rides along for image paste.
+            .disable_drag_drop_handler()
+            .enable_clipboard_access()
             .on_new_window(move |url, _features| {
                 let app = opener_app.clone();
                 let url = url.to_string();

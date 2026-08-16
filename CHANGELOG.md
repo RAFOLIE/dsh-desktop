@@ -1,6 +1,20 @@
 # Changelog
 
-## v1.5.2 — 2026-08-14
+## v1.5.3 — 2026-08-16
+
+修复:桌面端无法拖放文件进前端(浏览器正常)。
+
+- **根因**:Windows 上 WebView2 默认的拖放处理器会把文件拖拽事件整个吞掉,页面收不到 HTML5 drop 事件——Tauri 官方文档要求必须 `disable_drag_drop_handler()` 才能启用浏览器级拖放
+- **修复**:窗口构建时禁用默认拖放处理器 + 开启页面剪贴板访问(`enable_clipboard_access`,粘贴截图同通道)
+- 修复后与浏览器行为完全一致:可拖入 **png / jpg / webp / gif** 四种图片(DSH 附件 v1 仅支持这四种,从解码字节校验);PDF/文本/视频需走会话内文件读取工具
+
+Fix: files could not be dragged into the in-app webchat (works in a browser).
+
+- **Root cause**: on Windows, WebView2's default drag-drop handler swallows file drops before the page sees them — the tauri-documented requirement is to disable that handler for browser-parity HTML5 dnd
+- **Fix**: disable the default drag-drop handler and enable page clipboard access (`enable_clipboard_access`, same channel for pasted screenshots) on the window builder
+- After the fix drag-and-drop behaves exactly like a browser: **png / jpg / webp / gif** images are accepted (the DSH v1 attachment path supports exactly these four, verified from decoded bytes); PDFs/text/videos go through the in-chat file-reading tools instead
+
+## v1.5.2 — 2026-08-14 — 2026-08-14
 
 改进:应用更新后自动同步插件包版本,市场不再反复提示"重新下载"。
 
