@@ -193,9 +193,13 @@ pub fn run() {    tauri::Builder::default()
             .build()?;
 
             let open = MenuItem::with_id(app, "open", "Open DSH", true, None::<&str>)?;
-            let restart = MenuItem::with_id(app, "restart", "重启 DSH", true, None::<&str>)?;
+            // Backend-only restart: relaunches the dsh web process, not the
+            // app — the name says so explicitly now (it used to read "重启
+            // DSH", which users reasonably read as "this also updates").
+            let restart = MenuItem::with_id(app, "restart", "重启 dsh web(后端)", true, None::<&str>)?;
+            let update = MenuItem::with_id(app, "update", "检查前端更新", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出(关闭 DSH)", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &restart, &quit])?;
+            let menu = Menu::with_items(app, &[&open, &restart, &update, &quit])?;
 
             TrayIconBuilder::with_id("main-tray")
                 .icon(
@@ -210,6 +214,7 @@ pub fn run() {    tauri::Builder::default()
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "open" => show_main_window(app),
                     "restart" => dsh::restart(app.clone()),
+                    "update" => update::check_now(app.clone()),
                     "quit" => quit_dsh(app),
                     _ => {}
                 })

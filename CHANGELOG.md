@@ -1,6 +1,18 @@
 # Changelog
 
-## v1.5.5 — 2026-08-16
+## v1.5.6 — 2026-08-16
+
+改进:托盘菜单更名 + 新增「检查前端更新」。
+
+- 「重启 DSH」更名 **「重启 dsh web(后端)」**——它只重启网页后端,旧名容易被理解为"也会更新前端"(实际更新只在应用启动时检查)
+- 新增托盘菜单 **「检查前端更新」**:随时手动触发应用自更新检查;无更新弹通知「前端已是最新版本 v{当前}」,有更新则通知「正在下载/已更新到 v{新},正在重启…」并走既有自动重启(含插件包同步);连点菜单有防重入保护
+
+Improvement: tray menu rename plus a new "check for frontend update" entry.
+
+- "重启 DSH" is renamed **"重启 dsh web(后端)"** — it only restarts the web backend; the old name invited reading it as "this also updates the app" (updates actually only check at app launch)
+- New tray item **"检查前端更新"**: trigger the app self-update on demand; toasts narrate "已是最新 v{current}" / "正在下载" / "已更新到 v{new},正在重启…" and the existing auto-restart (with plugin sync) follows; repeated clicks are guarded against re-entry
+
+## v1.5.5 — 2026-08-16 — 2026-08-16
 
 改进:版本胶囊的更新指示改为绿色缺口圆环旋转。
 

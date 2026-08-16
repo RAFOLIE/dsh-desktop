@@ -7,6 +7,7 @@
 
 use serde_json::json;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -15,6 +16,19 @@ use crate::dsh;
 const REPO_SLUG: &str = "RAFOLIE/dsh-desktop-windowos";
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const PLUGIN_NAME: &str = "dsh-desktop-plugin";
+
+/// Re-entry guard for the tray-triggered check (menu spam runs one check).
+static CHECK_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
+/// Fire-and-forget Windows toast; mirrors monitor.rs's notification recipe.
+fn toast(text: &str) {
+    use tauri_winrt_notification::{Duration as ToastDuration, Toast};
+    let _ = Toast::new(crate::TOAST_AUMID)
+        .title("DSH 桌面端")
+        .text1(text)
+        .duration(ToastDuration::Short)
+        .show();
+}
 
 /// Compare dotted numeric triples; positive when `a > b`.
 fn compare_versions(a: &str, b: &str) -> i32 {
@@ -106,8 +120,11 @@ fn relaunch_app(exe: &Path) {
     }
 }
 
-/// The whole launch-time flow; each step narrates to the boot page.
-fn run_check(app: &AppHandle) -> Result<(), String> {
+/// The whole launch-time flow; each step narrates to the boot page. When
+/// `on_demand` (tray "检查前端更新"), outcomes additionally surface as
+/// Windows toasts because the boot page — the usual narrator — is usually
+/// gone by then (the window sits on the webchat).
+fn run_check(app: &AppHandle, on_demand: bool) -> Result<(), String> {
     let current = app.package_info().version.to_string();
     let narrate = |payload: serde_json::Value| {
         let _ = app.emit("app-update", payload);
@@ -148,11 +165,17 @@ fn run_check(app: &AppHandle) -> Result<(), String> {
     };
     if compare_versions(&to_version, &current) <= 0 {
         narrate(json!({ "state": "none" }));
+        if on_demand {
+            toast(&format!("前端已是最新版本 v{current}"));
+        }
         sync_plugin_packages(&current);
         return Ok(());
     }
 
     narrate(json!({ "state": "downloading", "from": current, "to": to_version }));
+    if on_demand {
+        toast(&format!("正在下载前端 v{to_version}…"));
+    }
     let exe = tauri::utils::platform::current_exe().map_err(|e| format!("current exe: {e}"))?;
     let tmp = std::env::temp_dir().join(format!(
         "dsh-desktop-update-{}-{to_version}.exe",
@@ -173,6 +196,9 @@ fn run_check(app: &AppHandle) -> Result<(), String> {
     let _ = std::fs::remove_file(&tmp);
 
     narrate(json!({ "state": "done", "from": current, "to": to_version }));
+    if on_demand {
+        toast(&format!("已更新到 v{to_version},正在重启…"));
+    }
     // The exe is on the new version now; bring the npm-installed plugin
     // package onto the same line so the market stops offering (and pnpm's
     // fresh-release hold keeps rejecting) an update.
@@ -302,9 +328,26 @@ fn sync_plugin_packages(target: &str) {
 /// never fails loudly — errors reach the pill as a `failed` state.
 pub fn spawn_check(app: AppHandle) {
     std::thread::spawn(move || {
-        if let Err(message) = run_check(&app) {
+        if let Err(message) = run_check(&app, false) {
             eprintln!("[dsh-desktop] self-update failed: {message}");
             let _ = app.emit("app-update", json!({ "state": "failed", "message": message }));
+        }
+    });
+}
+
+/// Tray-triggered on-demand check. Same flow as launch, but outcomes are
+/// narrated with toasts; guarded so repeated menu clicks run one check.
+pub fn check_now(app: AppHandle) {
+    if CHECK_IN_FLIGHT.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    std::thread::spawn(move || {
+        let result = run_check(&app, true);
+        CHECK_IN_FLIGHT.store(false, Ordering::SeqCst);
+        if let Err(message) = result {
+            eprintln!("[dsh-desktop] on-demand update check failed: {message}");
+            let _ = app.emit("app-update", json!({ "state": "failed", "message": message }));
+            toast(&format!("检查前端更新失败:{message}"));
         }
     });
 }
