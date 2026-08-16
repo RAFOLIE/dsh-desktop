@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import {
   compareVersions,
@@ -5,7 +6,7 @@ import {
   ensureUpdated,
   ensureWebShortcut,
   pickExeAsset,
-  pickExeAssetUrl,
+  pickExeAssetUrl, pickExeAssetMeta, routeUrl, verifyBytes,
   resolveAssetUrl,
   type InstallerDeps,
 } from '../src/installer.js'
@@ -190,5 +191,38 @@ describe('ensureUpdated', () => {
     const deps = makeDeps({ exists: () => true, readExeVersion: async () => '' })
     const result = await ensureUpdated(config, deps)
     expect(result.updated).toBe(false)
+  })
+})
+
+describe('download route chain and integrity', () => {
+  it('routeUrl prefixes mirrors only', () => {
+    expect(routeUrl({ kind: 'direct' }, 'https://github.com/a')).toBe('https://github.com/a')
+    expect(routeUrl({ kind: 'proxy', url: 'http://127.0.0.1:7890' }, 'https://github.com/a')).toBe('https://github.com/a')
+    expect(routeUrl({ kind: 'mirror', prefix: 'https://ghproxy.com/' }, 'https://github.com/a')).toBe('https://ghproxy.com/https://github.com/a')
+  })
+
+  it('verifyBytes enforces size and sha256 digest', () => {
+    const payload = Buffer.alloc(8, 7)
+    const good = 'sha256:' + createHash('sha256').update(payload).digest('hex')
+    expect(verifyBytes(payload, 8, good)).toBe(true)
+    expect(verifyBytes(Buffer.alloc(4), 8, good)).toBe(false)
+    expect(verifyBytes(payload, 8, 'sha256:' + '0'.repeat(64))).toBe(false)
+    expect(verifyBytes(payload, Number.NaN, undefined)).toBe(true)
+    expect(verifyBytes(payload, 8, 'blake2b:xyz')).toBe(true)
+  })
+
+  it('pickExeAssetMeta carries size and digest from the API body', () => {
+    const body = JSON.stringify({
+      assets: [{
+        name: 'dsh-desktop-windowos-v1.5.10.exe',
+        browser_download_url: 'https://example.invalid/exe',
+        size: 64,
+        digest: 'sha256:' + 'a'.repeat(64),
+      }],
+    })
+    const meta = pickExeAssetMeta(body)
+    expect(meta.version).toBe('1.5.10')
+    expect(meta.size).toBe(64)
+    expect(meta.digest).toBe('sha256:' + 'a'.repeat(64))
   })
 })

@@ -4,9 +4,64 @@
  */
 
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import * as fs from 'node:fs'
 import * as net from 'node:net'
 import type { ResolvedConfig } from './config.js'
+
+/** Public GitHub asset mirrors (prefix + asset URL), last-resort tier for
+ *  proxy-less networks; every transfer through them is verified against the
+ *  API's own size/digest metadata by the caller. */
+const ASSET_MIRRORS = ['https://ghproxy.com/', 'https://gh-proxy.com/', 'https://ghfast.top/']
+
+/** Local proxy ports worth probing (Clash/v2rayN coverage; 7897 included —
+ *  a real-world case where 7890/7891 both missed). */
+const LOCAL_PROXY_PORTS = ['7890', '7891', '7897', '7898', '10808', '10809']
+
+/** One download route: direct, through a proxy, or through a mirror prefix. */
+export type DownloadRoute = { kind: 'direct' } | { kind: 'proxy', url: string } | { kind: 'mirror', prefix: string }
+
+/** Environment proxies for the route chain, in standard precedence order. */
+export function envProxies(): string[] {
+  const list: string[] = []
+  for (const key of ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy'] as const) {
+    const value = process.env[key]
+    if (value !== undefined && value !== '' && !list.includes(value)) list.push(value)
+  }
+  return list
+}
+
+/** The ordered chain: direct (overseas) → env proxies → probed local ports
+ *  (proxied users) → public mirrors (proxy-less blocked networks). */
+export async function downloadRoutes(): Promise<DownloadRoute[]> {
+  const routes: DownloadRoute[] = [{ kind: 'direct' }]
+  for (const url of envProxies()) routes.push({ kind: 'proxy', url })
+  const alive = await Promise.all(LOCAL_PROXY_PORTS.map(async port => {
+    const url = `http://127.0.0.1:${port}`
+    return await proxyAlive(url) ? url : null
+  }))
+  for (const url of alive) {
+    if (url !== null && !envProxies().includes(url)) routes.push({ kind: 'proxy', url })
+  }
+  for (const prefix of ASSET_MIRRORS) routes.push({ kind: 'mirror', prefix })
+  return routes
+}
+
+/** Build the URL one route actually fetches. */
+export function routeUrl(route: DownloadRoute, url: string): string {
+  return route.kind === 'mirror' ? `${route.prefix}${url}` : url
+}
+
+/** Size (+optional sha256 digest) verification for downloaded assets —
+ *  what makes mirror transfers trustworthy. */
+export function verifyBytes(bytes: Buffer, size: number, digest?: string): boolean {
+  if (Number.isFinite(size) && bytes.length !== size) return false
+  if (digest === undefined) return true
+  const hex = digest.replace(/^sha256:/, '')
+  if (hex === digest) return true // unknown algorithm: size-only contract
+  const got = createHash('sha256').update(bytes).digest('hex')
+  return got.toLowerCase() === hex.toLowerCase()
+}
 
 /** Fakeable host boundary; every effect the installer can take. */
 export interface InstallerDeps {
@@ -17,8 +72,9 @@ export interface InstallerDeps {
   desktopDir(): Promise<string>
   /** Fetch a URL's body as JSON text (GitHub API). */
   fetchText(url: string): Promise<string>
-  /** Fetch a URL's body as bytes (release asset); aborting the signal kills the download. */
-  fetchBytes(url: string, signal?: AbortSignal): Promise<Buffer>
+  /** Fetch a URL's body as bytes (release asset); walks the direct/proxy/
+   *  mirror route chain and discards transfers failing `verify`. */
+  fetchBytes(url: string, signal?: AbortSignal, verify?: (bytes: Buffer) => boolean): Promise<Buffer>
   /** Create/refresh a desktop .lnk pointing at the exe. */
   createShortcut(exePath: string, workDir: string, name: string): Promise<void>
   /** Read an exe's embedded product version, '' when unreadable. */
@@ -71,11 +127,25 @@ export function resolveAssetUrl(config: ResolvedConfig, url: string): string {
  * asset name; entries without a parseable version report ''.
  */
 export function pickExeAsset(body: string): { url: string, version: string } {
-  const release = JSON.parse(body) as { assets?: Array<{ name: string, browser_download_url: string }> }
+  const meta = pickExeAssetMeta(body)
+  return { url: meta.url, version: meta.version }
+}
+
+/** Same as pickExeAsset but also carries the API's size/digest metadata,
+ *  which powers integrity verification for proxied and mirrored downloads. */
+export function pickExeAssetMeta(body: string): { url: string, version: string, size: number, digest?: string } {
+  const release = JSON.parse(body) as {
+    assets?: Array<{ name: string, browser_download_url: string, size?: number, digest?: string }>
+  }
   const asset = release.assets?.find(candidate => candidate.name.endsWith('.exe'))
   if (asset === undefined) throw new Error('latest release has no .exe asset')
   const version = /^dsh-desktop-windowos-v(\d+(?:\.\d+)*)\.exe$/.exec(asset.name)?.[1] ?? ''
-  return { url: asset.browser_download_url, version }
+  return {
+    url: asset.browser_download_url,
+    version,
+    size: asset.size ?? Number.NaN,
+    digest: asset.digest,
+  }
 }
 
 /** Dot-numeric compare: negative when a<b, 0 when equal, positive when a>b. */
@@ -87,22 +157,6 @@ export function compareVersions(a: string, b: string): number {
     if (d !== 0) return d
   }
   return 0
-}
-
-/** Proxy fallback candidates for release-asset downloads: environment
- *  override first, then the common local proxy ports — GitHub's CDN is
- *  intermittently unreachable directly while the local proxy sails through. */
-function proxyCandidates(): string[] {
-  const list: string[] = []
-  for (const key of ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy'] as const) {
-    const value = process.env[key]
-    if (value !== undefined && value !== '' && !list.includes(value)) list.push(value)
-  }
-  for (const port of ['7890', '7891']) {
-    const value = `http://127.0.0.1:${port}`
-    if (!list.includes(value)) list.push(value)
-  }
-  return list
 }
 
 /** 1s TCP probe so dead proxy ports don't burn curl timeouts. */
@@ -121,15 +175,16 @@ function proxyAlive(proxy: string): Promise<boolean> {
   })
 }
 
-/** One curl run to `tmp`; `proxy` adds -x when set. Aborting `signal` kills
- *  the curl child so job cancellation stays prompt. */
-function curlTo(url: string, tmp: string, proxy?: string, signal?: AbortSignal): Promise<Buffer> {
+/** One curl run for a route (proxy adds -x, mirror fetches prefix+url).
+ *  Aborting `signal` kills the curl child so job cancellation stays prompt. */
+function curlRoute(route: DownloadRoute, url: string, tmp: string, signal?: AbortSignal): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const args = [
-      '--silent', '--show-error', '--location', '--fail', '--retry', '2',
-      '--max-time', '150', '--user-agent', 'dsh-desktop-plugin', '--output', tmp, url,
+      '--silent', '--show-error', '--location', '--fail', '--retry', '1',
+      '--connect-timeout', '8', '--max-time', '120',
+      '--user-agent', 'dsh-desktop-plugin', '--output', tmp, routeUrl(route, url),
     ]
-    if (proxy !== undefined) args.push('-x', proxy)
+    if (route.kind === 'proxy') args.push('-x', route.url)
     const child = spawn('curl', args, { stdio: 'ignore', windowsHide: true })
     const onAbort = () => { child.kill() }
     if (signal !== undefined && !signal.aborted) signal.addEventListener('abort', onAbort, { once: true })
@@ -183,24 +238,24 @@ export function nodeDeps(): InstallerDeps {
       return response.text()
     },
     // Release assets are multi-MB; Node's fetch stalls on some networks where
-    // system curl succeeds, so route the binary download through curl.exe —
-    // direct first, then through every reachable proxy candidate (GitHub's
-    // CDN is intermittently blocked while the local proxy sails through).
-    fetchBytes: async (url, signal) => {
+    // system curl succeeds. One download walks the whole route chain —
+    // direct → env proxies → probed local ports → public mirrors — and the
+    // optional `verify` callback (size/digest from the API) discards any
+    // transfer that fails integrity so the next route is tried instead.
+    fetchBytes: async (url, signal, verify) => {
       const tmp = `${process.env.TEMP ?? process.cwd()}\\dsh-desktop-download-${process.pid}-${Date.now()}.exe`
       try {
-        try {
-          return await curlTo(url, tmp, undefined, signal)
-        } catch (directError) {
-          if (signal?.aborted) throw directError
-          for (const proxy of await Promise.all(proxyCandidates().map(async p => [p, await proxyAlive(p)] as const))) {
-            if (!proxy[1]) continue
-            try {
-              return await curlTo(url, tmp, proxy[0], signal)
-            } catch { /* try the next candidate */ }
+        let firstError: unknown
+        for (const route of await downloadRoutes()) {
+          try {
+            const bytes = await curlRoute(route, url, tmp, signal)
+            if (verify === undefined || verify(bytes)) return bytes
+          } catch (error) {
+            if (signal?.aborted) throw error
+            firstError ??= error
           }
-          throw directError
         }
+        throw firstError instanceof Error ? firstError : new Error(`all download routes failed for ${url}`)
       } finally {
         fs.rmSync(tmp, { force: true })
       }
@@ -261,8 +316,9 @@ export async function ensureInstalled(config: ResolvedConfig, deps: InstallerDep
   let downloaded = false
   if (!deps.exists(exePath)) {
     const body = await deps.fetchText(`https://api.github.com/repos/${config.repoSlug}/releases/latest`)
-    const assetUrl = resolveAssetUrl(config, pickExeAssetUrl(body))
-    const bytes = await deps.fetchBytes(assetUrl, signal)
+    const asset = pickExeAssetMeta(body)
+    const assetUrl = resolveAssetUrl(config, asset.url)
+    const bytes = await deps.fetchBytes(assetUrl, signal, got => verifyBytes(got, asset.size, asset.digest))
     deps.mkdir(config.installDir)
     deps.writeFile(exePath, bytes)
     downloaded = true
@@ -310,11 +366,15 @@ export async function ensureUpdated(config: ResolvedConfig, deps: InstallerDeps)
   const none: UpdateResult = { exePath, updated: false, fromVersion: '', toVersion: '' }
   if (!deps.exists(exePath)) return none
   const body = await deps.fetchText(`https://api.github.com/repos/${config.repoSlug}/releases/latest`)
-  const asset = pickExeAsset(body)
+  const asset = pickExeAssetMeta(body)
   if (asset.version === '') return none
   const current = await deps.readExeVersion(exePath)
   if (current === '' || compareVersions(asset.version, current) <= 0) return none
-  const bytes = await deps.fetchBytes(resolveAssetUrl(config, asset.url))
+  const bytes = await deps.fetchBytes(
+    resolveAssetUrl(config, asset.url),
+    undefined,
+    got => verifyBytes(got, asset.size, asset.digest),
+  )
   const oldPath = `${exePath}.old`
   deps.removeFile(oldPath)
   deps.rename(exePath, oldPath)

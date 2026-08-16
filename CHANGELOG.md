@@ -1,6 +1,22 @@
 # Changelog
 
-## v1.5.10 — 2026-08-16
+## v1.5.11 — 2026-08-16
+
+改进:更新下载链覆盖三类网络用户(国外直连/国内镜像/代理探测),镜像传输带完整性校验。
+
+- **路由链(按序尝试,全部快速失败)**:直连(国外用户秒过)→ 环境变量代理(HTTPS_PROXY/HTTP_PROXY/ALL_PROXY)→ **本机代理端口探活**(7890/7891/**7897**/7898/10808/10809,覆盖 Clash/v2rayN;7897 为真机踩坑新增)→ **公共镜像**(ghproxy.com / gh-proxy.com / ghfast.top,纯国内无代理用户兜底)
+- **完整性校验**:下载结果用 GitHub API 自带的资产 size+sha256 digest 验证,不匹配丢弃换下一路由——公共镜像被投毒/截断自动免疫
+- **API 请求也走代理链**(api.github.com 直连失败自动走代理);每跳 --connect-timeout 8 快速失败
+- 插件(installer.ts)同步改造(fetchBytes 走全链+verify 闭包,25/25 测试绿),npm 按隔一天政策随下次窗口发布
+- 应用侧 v1.5.11(GitHub Release)
+
+Improvement: the download chain now serves three user profiles (overseas direct / China mirror / proxy probe), with integrity verification for mirrored transfers.
+
+- Ordered route chain with fast failure: direct → env proxies → probed local ports (7890/7891/7897/7898/10808/10809) → public mirrors (ghproxy.com / gh-proxy.com / ghfast.top)
+- Integrity: every transfer is verified against the API's own size + sha256 digest; mismatches are discarded and the next route tried
+- The API call itself falls back through proxies; plugin (installer.ts) rebuilt with the same chain (25/25 tests), npm ships at the next publishing window per policy
+
+## v1.5.10 — 2026-08-16 — 2026-08-16
 
 改进:一键安装自动选 npm 源(测速:官方 vs 国内镜像)。
 

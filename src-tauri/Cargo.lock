@@ -831,11 +831,12 @@ dependencies = [
 
 [[package]]
 name = "dsh-desktop-windowos"
-version = "1.5.10"
+version = "1.5.11"
 dependencies = [
  "http",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",

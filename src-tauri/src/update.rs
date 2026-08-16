@@ -58,26 +58,64 @@ fn parse_asset_version(name: &str) -> Option<&str> {
     ok.then_some(version)
 }
 
-/// Proxy candidates for the asset-download fallback: an explicit environment
-/// override first, then the common local proxy ports (GitHub's release CDN is
-/// intermittently unreachable directly on this network while the local proxy
-/// sails through).
-fn proxy_candidates() -> Vec<String> {
+/// Public GitHub asset mirrors (prefix + full asset URL), the last-resort
+/// tier for proxy-less networks where GitHub's CDN is blocked. Everything
+/// fetched through them is verified against the API's own size/digest.
+const ASSET_MIRRORS: &[&str] = &[
+    "https://ghproxy.com/",
+    "https://gh-proxy.com/",
+    "https://ghfast.top/",
+];
+
+/// Local proxy ports worth probing, covering the common Clash/v2rayN
+/// setups (7897 included: real-world case where 7890/7891 missed).
+const LOCAL_PROXY_PORTS: &[&str] = &["7890", "7891", "7897", "7898", "10808", "10809"];
+
+/// One download route: direct, through a proxy, or through a public mirror.
+#[derive(Debug)]
+enum Route {
+    Direct,
+    Proxy(String),
+    Mirror(String),
+}
+
+fn env_proxies() -> Vec<String> {
     let mut list = Vec::new();
-    for key in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"] {
+    for key in [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ] {
         if let Ok(value) = std::env::var(key) {
             if !value.is_empty() && !list.contains(&value) {
                 list.push(value);
             }
         }
     }
-    for port in ["7890", "7891"] {
-        let value = format!("http://127.0.0.1:{port}");
-        if !list.contains(&value) {
-            list.push(value);
+    list
+}
+
+/// The ordered chain serving three user profiles: overseas (direct hits),
+/// proxied (env override, then probed local ports), proxy-less China (public
+/// mirrors). Dead paths fail fast (--connect-timeout 8).
+fn download_routes() -> Vec<Route> {
+    let mut routes = vec![Route::Direct];
+    for proxy in env_proxies() {
+        routes.push(Route::Proxy(proxy));
+    }
+    for port in LOCAL_PROXY_PORTS {
+        let proxy = format!("http://127.0.0.1:{port}");
+        if proxy_alive(&proxy) {
+            routes.push(Route::Proxy(proxy));
         }
     }
-    list
+    for mirror in ASSET_MIRRORS {
+        routes.push(Route::Mirror(mirror.to_string()));
+    }
+    routes
 }
 
 /// 1-second TCP probe so dead proxy ports don't burn curl timeouts.
@@ -102,27 +140,34 @@ fn proxy_alive(proxy: &str) -> bool {
     }
 }
 
-/// One curl run; `proxy` adds `-x` when set.
-fn curl_to(url: &str, dest: &Path, proxy: Option<&str>) -> std::io::Result<()> {
+/// One curl run for a route; proxies add `-x`, mirrors fetch `prefix + url`.
+fn curl_route(url: &str, dest: &Path, route: &Route) -> std::io::Result<()> {
     let mut command = std::process::Command::new("curl");
-    command
-        .args([
-            "--silent",
-            "--show-error",
-            "--location",
-            "--fail",
-            "--retry",
-            "2",
-            "--max-time",
-            "150",
-            "--user-agent",
-            "dsh-desktop-windowos",
-            "--output",
-        ])
-        .arg(dest)
-        .arg(url);
-    if let Some(proxy) = proxy {
-        command.arg("-x").arg(proxy);
+    command.args([
+        "--silent",
+        "--show-error",
+        "--location",
+        "--fail",
+        "--retry",
+        "1",
+        "--connect-timeout",
+        "8",
+        "--max-time",
+        "120",
+        "--user-agent",
+        "dsh-desktop-windowos",
+        "--output",
+    ]);
+    match route {
+        Route::Direct => {
+            command.arg(dest).arg(url);
+        }
+        Route::Proxy(proxy) => {
+            command.arg(dest).arg(url).arg("-x").arg(proxy);
+        }
+        Route::Mirror(prefix) => {
+            command.arg(dest).arg(format!("{prefix}{url}"));
+        }
     }
     #[cfg(windows)]
     {
@@ -133,30 +178,60 @@ fn curl_to(url: &str, dest: &Path, proxy: Option<&str>) -> std::io::Result<()> {
     if status.success() {
         Ok(())
     } else {
-        Err(std::io::Error::other(format!("curl exit {status} for {url}")))
+        Err(std::io::Error::other(format!("curl exit {status} via {route:?}")))
     }
 }
 
-/// Download a release asset with system curl, direct first and then through
-/// every reachable proxy candidate — a direct-only download fails silently
-/// for the user whenever GitHub's CDN is blocked on the current network.
-fn download_with_curl(url: &str, dest: &Path) -> std::io::Result<()> {
-    if curl_to(url, dest, None).is_ok() {
-        return Ok(());
+/// Verify a downloaded asset against the GitHub API's own metadata: exact
+/// byte size always, sha256 when the API provided a digest. This is what
+/// makes public mirrors safe to use — a tampered or truncated mirror file
+/// is discarded and the next route tried.
+fn verify_download(dest: &Path, size: u64, digest: Option<&str>) -> bool {
+    let Ok(bytes) = std::fs::read(dest) else {
+        return false;
+    };
+    if bytes.len() as u64 != size {
+        return false;
     }
-    for proxy in proxy_candidates() {
-        if !proxy_alive(&proxy) {
-            continue;
+    match digest.and_then(|d| d.strip_prefix("sha256:")) {
+        Some(hex) => {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(&bytes);
+            let got = format!("{:x}", hasher.finalize());
+            got.eq_ignore_ascii_case(hex)
         }
-        log_line(&format!(
-            "[dsh-desktop] direct asset download failed; retrying via proxy {proxy}"
-        ));
-        if curl_to(url, dest, Some(&proxy)).is_ok() {
-            return Ok(());
+        None => true, // no digest advertised: size match is the contract
+    }
+}
+
+/// Download a release asset through the whole route chain, verifying each
+/// successful transfer; the first route that both transfers and verifies
+/// wins. A silently-failing single route is what kept exe updates stuck.
+fn download_with_curl(url: &str, dest: &Path, size: u64, digest: Option<&str>) -> std::io::Result<()> {
+    let routes = download_routes();
+    let mut last_error = String::from("no route attempted");
+    for route in routes {
+        match curl_route(url, dest, &route) {
+            Ok(()) => {
+                if verify_download(dest, size, digest) {
+                    log_line(&format!("[dsh-desktop] asset downloaded via {route:?} (verified)"));
+                    return Ok(());
+                }
+                log_line(&format!(
+                    "[dsh-desktop] asset via {route:?} failed integrity check; trying next route"
+                ));
+                let _ = std::fs::remove_file(dest);
+                last_error = format!("integrity mismatch via {route:?}");
+            }
+            Err(e) => {
+                log_line(&format!("[dsh-desktop] {e}"));
+                last_error = e.to_string();
+            }
         }
     }
     Err(std::io::Error::other(format!(
-        "all download attempts failed for {url}"
+        "all download routes failed for {url} ({last_error})"
     )))
 }
 
@@ -194,6 +269,37 @@ fn relaunch_app(exe: &Path) {
     }
 }
 
+/// GET a JSON API directly first, then through every reachable proxy —
+/// api.github.com is usually open even where the CDN is not, but a proxied
+/// machine should not depend on that luck.
+fn api_get_json(url: &str) -> Option<serde_json::Value> {
+    let attempt = |proxy: Option<&str>| -> Option<serde_json::Value> {
+        let mut builder = ureq::AgentBuilder::new().timeout(Duration::from_secs(6));
+        if let Some(proxy) = proxy {
+            builder = builder.proxy(ureq::Proxy::new(proxy).ok()?);
+        }
+        let response = builder
+            .build()
+            .get(url)
+            .set("User-Agent", "dsh-desktop-windowos")
+            .set("Accept", "application/vnd.github+json")
+            .call()
+            .ok()?;
+        response.into_json().ok()
+    };
+    if let Some(value) = attempt(None) {
+        return Some(value);
+    }
+    let mut proxies = env_proxies();
+    for port in LOCAL_PROXY_PORTS {
+        let proxy = format!("http://127.0.0.1:{port}");
+        if proxy_alive(&proxy) && !proxies.contains(&proxy) {
+            proxies.push(proxy);
+        }
+    }
+    proxies.iter().find_map(|p| attempt(Some(p)))
+}
+
 /// The whole launch-time flow; each step narrates to the boot page. When
 /// `on_demand` (tray "检查前端更新"), outcomes additionally surface as
 /// Windows toasts because the boot page — the usual narrator — is usually
@@ -211,29 +317,26 @@ fn run_check(app: &AppHandle, on_demand: bool) -> Result<(), String> {
     }
 
     narrate(json!({ "state": "checking" }));
-    let body: serde_json::Value = ureq::get(&format!(
-        "https://api.github.com/repos/{REPO_SLUG}/releases/latest"
-    ))
-    .set("User-Agent", "dsh-desktop-windowos")
-    .set("Accept", "application/vnd.github+json")
-    .timeout(Duration::from_secs(5))
-    .call()
-    .map_err(|e| format!("github api: {e}"))?
-    .into_json()
-    .map_err(|e| format!("github json: {e}"))?;
+    let api_url = format!("https://api.github.com/repos/{REPO_SLUG}/releases/latest");
+    let body = api_get_json(&api_url)
+        .ok_or_else(|| format!("github api unreachable directly and via proxies: {api_url}"))?;
 
-    let mut latest: Option<(String, String)> = None;
+    // (version, url, size, digest) — the metadata powers the integrity check
+    // that makes mirror downloads trustworthy.
+    let mut latest: Option<(String, String, u64, Option<String>)> = None;
     if let Some(assets) = body["assets"].as_array() {
         for asset in assets {
             let name = asset["name"].as_str().unwrap_or_default();
             let url = asset["browser_download_url"].as_str().unwrap_or_default();
+            let size = asset["size"].as_u64().unwrap_or_default();
+            let digest = asset["digest"].as_str().map(str::to_string);
             if let Some(version) = parse_asset_version(name) {
-                latest = Some((version.to_string(), url.to_string()));
+                latest = Some((version.to_string(), url.to_string(), size, digest));
                 break;
             }
         }
     }
-    let Some((to_version, url)) = latest else {
+    let Some((to_version, url, asset_size, asset_digest)) = latest else {
         narrate(json!({ "state": "failed", "message": "latest release has no versioned exe asset" }));
         return Ok(());
     };
@@ -255,7 +358,8 @@ fn run_check(app: &AppHandle, on_demand: bool) -> Result<(), String> {
         "dsh-desktop-update-{}-{to_version}.exe",
         std::process::id()
     ));
-    download_with_curl(&url, &tmp).map_err(|e| format!("download: {e}"))?;
+    download_with_curl(&url, &tmp, asset_size, asset_digest.as_deref())
+        .map_err(|e| format!("download: {e}"))?;
 
     // Rename-aside swap: safe on a running exe on Windows. If the copy fails
     // after the rename, roll back so the install is never left without an exe.

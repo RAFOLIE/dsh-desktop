@@ -3,6 +3,26 @@
  * @module dsh-desktop-plugin/installer
  */
 import type { ResolvedConfig } from './config.js';
+/** One download route: direct, through a proxy, or through a mirror prefix. */
+export type DownloadRoute = {
+    kind: 'direct';
+} | {
+    kind: 'proxy';
+    url: string;
+} | {
+    kind: 'mirror';
+    prefix: string;
+};
+/** Environment proxies for the route chain, in standard precedence order. */
+export declare function envProxies(): string[];
+/** The ordered chain: direct (overseas) → env proxies → probed local ports
+ *  (proxied users) → public mirrors (proxy-less blocked networks). */
+export declare function downloadRoutes(): Promise<DownloadRoute[]>;
+/** Build the URL one route actually fetches. */
+export declare function routeUrl(route: DownloadRoute, url: string): string;
+/** Size (+optional sha256 digest) verification for downloaded assets —
+ *  what makes mirror transfers trustworthy. */
+export declare function verifyBytes(bytes: Buffer, size: number, digest?: string): boolean;
 /** Fakeable host boundary; every effect the installer can take. */
 export interface InstallerDeps {
     exists(path: string): boolean;
@@ -12,8 +32,9 @@ export interface InstallerDeps {
     desktopDir(): Promise<string>;
     /** Fetch a URL's body as JSON text (GitHub API). */
     fetchText(url: string): Promise<string>;
-    /** Fetch a URL's body as bytes (release asset); aborting the signal kills the download. */
-    fetchBytes(url: string, signal?: AbortSignal): Promise<Buffer>;
+    /** Fetch a URL's body as bytes (release asset); walks the direct/proxy/
+     *  mirror route chain and discards transfers failing `verify`. */
+    fetchBytes(url: string, signal?: AbortSignal, verify?: (bytes: Buffer) => boolean): Promise<Buffer>;
     /** Create/refresh a desktop .lnk pointing at the exe. */
     createShortcut(exePath: string, workDir: string, name: string): Promise<void>;
     /** Read an exe's embedded product version, '' when unreadable. */
@@ -58,6 +79,14 @@ export declare function resolveAssetUrl(config: ResolvedConfig, url: string): st
 export declare function pickExeAsset(body: string): {
     url: string;
     version: string;
+};
+/** Same as pickExeAsset but also carries the API's size/digest metadata,
+ *  which powers integrity verification for proxied and mirrored downloads. */
+export declare function pickExeAssetMeta(body: string): {
+    url: string;
+    version: string;
+    size: number;
+    digest?: string;
 };
 /** Dot-numeric compare: negative when a<b, 0 when equal, positive when a>b. */
 export declare function compareVersions(a: string, b: string): number;
