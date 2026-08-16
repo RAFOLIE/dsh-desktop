@@ -1,6 +1,22 @@
 # Changelog
 
-## v1.5.9 — 2026-08-16
+## v1.5.10 — 2026-08-16
+
+改进:一键安装自动选 npm 源(测速:官方 vs 国内镜像)。
+
+- 未找到 DSH 时,启动页**并行测速** registry.npmjs.org 与 registry.npmmirror.com(各 4 秒超时,拉 @deepseek-ai/dsh 的 /latest 元数据)
+- 主按钮自动选**最快源**并显示毫秒数(如「已选最快:国内镜像 23ms」),另一个源保留为次按钮「改用官方源安装(210ms)」
+- 两个源都不通时回退普通安装命令(走用户 npm 配置);Rust 侧白名单只允许这两个 registry 进入命令行
+- 应用侧改动,插件 npm 不发布(按需发布政策)
+
+Improvement: the one-click install auto-picks the npm registry by speed.
+
+- On notfound, the boot page probes registry.npmjs.org vs registry.npmmirror.com in parallel (4s timeout each, fetching the package /latest metadata)
+- The primary button uses the faster source with its ms figure ("已选最快:国内镜像 23ms"); the other stays as a secondary button with its own timing
+- When both are unreachable the plain install command runs (user's npm config); Rust whitelists exactly those two registries into the command line
+- App-only change; no npm publish under the on-demand policy
+
+## v1.5.9 — 2026-08-16 — 2026-08-16
 
 改进:应用与插件 npm 版本线解耦 + 合并社区 PR #1。
 

@@ -22,6 +22,11 @@ type AppUpdate =
   | { state: "failed"; message?: string };
 
 const WEBCHAT_URL = "http://127.0.0.1:3080/";
+const REGISTRY_OFFICIAL = "https://registry.npmjs.org";
+const REGISTRY_MIRROR = "https://registry.npmmirror.com";
+
+/** Rust-side parallel speed probe of the two npm registries (ms, null=unreachable). */
+type NpmProbe = { npmjsMs: number | null; npmmirrorMs: number | null; fastest: string | null };
 
 /** Shell boot page: waits for DSH, then hands the whole window to the native
  *  webchat at http://127.0.0.1:3080/. After the replace, this page (and its
@@ -35,6 +40,17 @@ function App() {
   const [update, setUpdate] = useState<AppUpdate>({ state: "pending" });
   const [checkVisible, setCheckVisible] = useState(false);
   const [version, setVersion] = useState("");
+  const [npmProbe, setNpmProbe] = useState<NpmProbe | null>(null);
+
+  // Registry speed probe runs once when the notfound chooser appears; the
+  // faster source becomes the primary install button, the other stays as an
+  // explicit alternative. A failed probe leaves the plain default button.
+  useEffect(() => {
+    if (status.status !== "notfound" || npmProbe !== null) return;
+    invoke<NpmProbe>("dsh_npm_probe")
+      .then(setNpmProbe)
+      .catch(() => {});
+  }, [status.status, npmProbe]);
 
   useEffect(() => {
     let unlistenStatus: UnlistenFn | undefined;
@@ -192,9 +208,36 @@ function App() {
           <div className="detail">
             已搜索 PATH(where dsh,含 npm 全局 dsh/dsh.cmd)、应用目录与用户目录,均未发现 DSH 安装。推荐一键安装:
           </div>
-          <button type="button" onClick={() => invoke("dsh_install_npm")}>
-            一键全局安装并启动(推荐,约 1-3 分钟)
-          </button>
+          {(() => {
+            const mirrorFastest = npmProbe?.fastest === "npmmirror";
+            const ms = (v: number | null) => (v === null ? "不通" : `${v}ms`);
+            const primaryRegistry: string | null = mirrorFastest
+              ? REGISTRY_MIRROR
+              : npmProbe?.fastest === "npmjs"
+                ? REGISTRY_OFFICIAL
+                : null; // probe pending/failed: plain npm default
+            const secondaryRegistry = mirrorFastest ? REGISTRY_OFFICIAL : REGISTRY_MIRROR;
+            const primaryLabel = mirrorFastest
+              ? `一键全局安装并启动(已选最快:国内镜像 ${ms(npmProbe?.npmmirrorMs ?? null)})`
+              : npmProbe?.fastest === "npmjs"
+                ? `一键全局安装并启动(已选最快:官方源 ${ms(npmProbe.npmjsMs)})`
+                : "一键全局安装并启动(推荐,约 1-3 分钟)";
+            const secondaryLabel = mirrorFastest
+              ? `改用官方源安装(${ms(npmProbe?.npmjsMs ?? null)})`
+              : `改用国内镜像安装(${ms(npmProbe?.npmmirrorMs ?? null)})`;
+            return (
+              <>
+                <button type="button" onClick={() => invoke("dsh_install_npm", { registry: primaryRegistry })}>
+                  {primaryLabel}
+                </button>
+                {npmProbe !== null && (
+                  <button className="btn-secondary" type="button" onClick={() => invoke("dsh_install_npm", { registry: secondaryRegistry })}>
+                    {secondaryLabel}
+                  </button>
+                )}
+              </>
+            );
+          })()}
           <button type="button" onClick={() => invoke("dsh_download")}>
             下载并启动(npx 缓存,备选)
           </button>

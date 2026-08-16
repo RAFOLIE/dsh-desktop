@@ -396,26 +396,80 @@ pub fn set_custom_path(app: &AppHandle, raw: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Frontend "一键全局安装并启动": run `npm install -g @deepseek-ai/dsh` and
-/// retry startup — afterwards `where dsh` leads the chain permanently. The
+/// The two npm registries the one-click installer may use, probed in
+/// parallel at boot; the faster becomes the default and the UI offers the
+/// other as an explicit choice.
+pub const REGISTRY_NPMJS: &str = "https://registry.npmjs.org";
+pub const REGISTRY_NPMMIRROR: &str = "https://registry.npmmirror.com";
+
+/// Time one GET of the package's /latest metadata in ms; None when the
+/// registry is unreachable within 4s.
+fn probe_registry_ms(base: &str) -> Option<u128> {
+    let start = std::time::Instant::now();
+    let reached = ureq::get(&format!("{base}/@deepseek-ai/dsh/latest"))
+        .timeout(Duration::from_secs(4))
+        .call()
+        .is_ok();
+    reached.then(|| start.elapsed().as_millis())
+}
+
+/// Probe both registries in parallel (bounded by one timeout window). The
+/// JSON feeds the boot page's source chooser; `fastest` is null when both
+/// are unreachable (the UI then falls back to the plain npm default).
+pub fn npm_probe() -> Value {
+    let npmjs = std::thread::spawn(|| probe_registry_ms(REGISTRY_NPMJS));
+    let mirror = std::thread::spawn(|| probe_registry_ms(REGISTRY_NPMMIRROR));
+    let npmjs_ms = npmjs.join().unwrap_or(None);
+    let mirror_ms = mirror.join().unwrap_or(None);
+    let fastest = match (npmjs_ms, mirror_ms) {
+        (Some(a), Some(b)) => Some(if a <= b { "npmjs" } else { "npmmirror" }),
+        (Some(_), None) => Some("npmjs"),
+        (None, Some(_)) => Some("npmmirror"),
+        (None, None) => None,
+    };
+    json!({ "npmjsMs": npmjs_ms, "npmmirrorMs": mirror_ms, "fastest": fastest })
+}
+
+/// Frontend "一键全局安装并启动": run `npm install -g @deepseek-ai/dsh`
+/// (optionally pinned to one of the two probed registries) and retry
+/// startup — afterwards `where dsh` leads the chain permanently. The
 /// install (500+ packages) can take minutes; it runs on its own thread and
 /// reports progress through the usual `dsh-status` events.
-pub fn install_global_npm(app: AppHandle) {
+pub fn install_global_npm(app: AppHandle, registry: Option<&str>) {
+    // Whitelist: only the two probed registries may enter the command line.
+    // Owned because the install thread outlives this call.
+    let url = registry
+        .filter(|u| *u == REGISTRY_NPMJS || *u == REGISTRY_NPMMIRROR)
+        .map(str::to_string);
     let app2 = app.clone();
     std::thread::spawn(move || {
+        let (label, spec) = match url {
+            Some(u) if u == REGISTRY_NPMMIRROR => (
+                "npm 全局安装中(国内镜像,约 1-3 分钟)",
+                format!("npm install -g @deepseek-ai/dsh --registry={u}"),
+            ),
+            Some(u) => (
+                "npm 全局安装中(官方源,约 1-3 分钟)",
+                format!("npm install -g @deepseek-ai/dsh --registry={u}"),
+            ),
+            None => (
+                "npm 全局安装中(约 1-3 分钟)",
+                "npm install -g @deepseek-ai/dsh".to_string(),
+            ),
+        };
         let _ = app2.emit(
             "dsh-status",
-            json!({ "status": "starting", "method": "npm 全局安装中(约 1-3 分钟)" }),
+            json!({ "status": "starting", "method": label }),
         );
         let mut command = Command::new("cmd");
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            command.raw_arg("/S /C \"npm install -g @deepseek-ai/dsh\"");
+            command.raw_arg(format!("/S /C \"{spec}\""));
         }
         #[cfg(not(windows))]
         {
-            command.arg("-c").arg("npm install -g @deepseek-ai/dsh");
+            command.arg("-c").arg(&spec);
         }
         command
             .current_dir(std::env::var("USERPROFILE").unwrap_or_else(|_| ".".to_string()))

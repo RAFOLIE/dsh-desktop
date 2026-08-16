@@ -30,10 +30,17 @@ fn dsh_download(app: AppHandle) {
 }
 
 /// Frontend-invoked one-click global install: npm i -g @deepseek-ai/dsh,
-/// then startup leads with the freshly installed global dsh.
+/// then startup leads with the freshly installed global dsh. The registry
+/// is optional and whitelisted Rust-side (probe winner or user's pick).
 #[tauri::command]
-fn dsh_install_npm(app: AppHandle) {
-    dsh::install_global_npm(app);
+fn dsh_install_npm(app: AppHandle, registry: Option<String>) {
+    dsh::install_global_npm(app, registry.as_deref());
+}
+
+/// Frontend-invoked registry speed probe for the install-source chooser.
+#[tauri::command]
+fn dsh_npm_probe() -> serde_json::Value {
+    dsh::npm_probe()
 }
 
 /// Frontend-invoked custom dsh path from the notfound dialog: validates it
@@ -143,7 +150,7 @@ pub fn run() {    tauri::Builder::default()
         }))
         .plugin(tauri_plugin_opener::init())
         .manage(dsh::DshState::new())
-        .invoke_handler(tauri::generate_handler![dsh_retry, dsh_download, dsh_custom_path, dsh_install_npm, dsh_exit])
+        .invoke_handler(tauri::generate_handler![dsh_retry, dsh_download, dsh_custom_path, dsh_install_npm, dsh_npm_probe, dsh_exit])
         .setup(|app| {
             #[cfg(windows)]
             ensure_toast_aumid();

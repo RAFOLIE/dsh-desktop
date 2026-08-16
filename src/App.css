@@ -67,6 +67,18 @@ button:hover {
   background: #388bfd;
 }
 
+/* Secondary action in the notfound chooser (alternative npm registry). */
+.btn-secondary {
+  background: transparent;
+  border: 1px solid #2c3140;
+  color: #9aa0a6;
+}
+
+.btn-secondary:hover {
+  background: #171a21;
+  color: #e6e6e6;
+}
+
 .path-input {
   width: 100%;
   box-sizing: border-box;
