@@ -116,9 +116,9 @@ function App() {
         <span className="version-pill" data-state={update.state}>
           <span className="version-text">v{displayVersion}</span>
           {spinnerActive && (
-            <span className="win-dots" aria-hidden="true">
-              <i /><i /><i /><i /><i /><i />
-            </span>
+            <svg className="update-ring" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="6" />
+            </svg>
           )}
           {update.state === "done" && (
             <svg

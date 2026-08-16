@@ -1,6 +1,16 @@
 # Changelog
 
-## v1.5.4 — 2026-08-16
+## v1.5.5 — 2026-08-16
+
+改进:版本胶囊的更新指示改为绿色缺口圆环旋转。
+
+- 原 Win11 六点旋转样式改为**绿色环形缺一小段、整体旋转**(SVG 圆环 stroke-dasharray,约 30/38 弧长 + 圆头端点),视觉更简洁连贯
+
+Improvement: the pill's update spinner becomes a rotating green ring with a small gap.
+
+- The Windows 11 six-dot style is replaced by a **green ring missing a small segment, rotating as a whole** (SVG circle stroke-dasharray, ~30/38 arc with round caps) — simpler and more continuous
+
+## v1.5.4 — 2026-08-16 — 2026-08-16
 
 改进:更新完成后应用**自动重启**,新版本即刻生效。
 

@@ -146,37 +146,21 @@ button:hover {
   font-variant-numeric: tabular-nums;
 }
 
-/* Windows 11 boot-style spinner: six dots on a ring, orbiting with a
-   staggered pulse (each dot swells and fades as it travels). */
-.win-dots {
-  position: relative;
+/* Update spinner: a green ring with a small gap, rotating. */
+.update-ring {
   width: 14px;
   height: 14px;
-  animation: spin 1.6s linear infinite;
+  animation: spin 0.9s linear infinite;
 }
 
-.win-dots i {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 3px;
-  height: 3px;
-  margin: -1.5px;
-  border-radius: 50%;
-  background: #3fb950;
-  animation: dot-pulse 1.6s ease-in-out infinite;
-}
-
-.win-dots i:nth-child(1) { transform: rotate(0deg)   translateY(-5.5px); animation-delay: 0s; }
-.win-dots i:nth-child(2) { transform: rotate(60deg)  translateY(-5.5px); animation-delay: 0.13s; }
-.win-dots i:nth-child(3) { transform: rotate(120deg) translateY(-5.5px); animation-delay: 0.26s; }
-.win-dots i:nth-child(4) { transform: rotate(180deg) translateY(-5.5px); animation-delay: 0.39s; }
-.win-dots i:nth-child(5) { transform: rotate(240deg) translateY(-5.5px); animation-delay: 0.52s; }
-.win-dots i:nth-child(6) { transform: rotate(300deg) translateY(-5.5px); animation-delay: 0.65s; }
-
-@keyframes dot-pulse {
-  0%, 100% { opacity: 0.25; scale: 0.75; }
-  35%      { opacity: 1;    scale: 1.25; }
+.update-ring circle {
+  fill: none;
+  stroke: #3fb950;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  /* Circumference ≈ 37.7 (r=6); ~30 drawn, a small gap of ~8 carries the
+     motion as the whole ring rotates. */
+  stroke-dasharray: 30 8;
 }
 
 /* Green check drawn in, holds ~1.8s (App.tsx timer), then fades out. */
