@@ -1,6 +1,19 @@
 # Changelog
 
-## v1.5.12 — 2026-08-16
+## v1.6.0 — 2026-08-17
+
+新功能:桌面壳成为 DSH 的**监护进程(supervisor)**——DSH 意外退出自动愈合。
+
+- **背景**:dshmarket 更新自身时会杀掉并复刻 DSH 进程(其自重启机制),复刻进程脱离桌面壳监管;DSH 崩溃时窗口对着死页面——都需要人肉托盘重启。市场文档明确:"有 supervisor 的部署应由 supervisor 接管重启"
+- **监护**:壳持有 DSH 子进程句柄专职看护;意外退出(市场自重启/崩溃)→ 等 2.5s 让市场的复刻进程落地 → 清 3080 端口(杀掉孤儿复刻) → 按启动链重拉自己的 DSH → 窗口强制刷新重连;正常退出(托盘重启/退出应用)不误触发
+- **防崩溃循环**:连续 3 次存活不足 30 秒即停止自动重启,报错到启动页并提示用托盘手动重试
+- 真机验证:手动杀 DSH 与触发市场自重启端点两种场景均自动愈合,3080 归属恢复为壳的子进程
+
+Feature: the desktop shell is now a proper DSH supervisor — unexpected DSH exits heal automatically.
+
+- dshmarket's self-update kills and re-spawns the DSH host outside our supervision, and a DSH crash left the window on a dead page; both needed a manual tray restart. The shell now watches its child: on unexpected exit it lets the market's raced replacement land, clears port 3080 (killing the orphan), respawns its own DSH, and force-reloads the window. Intentional exits (tray restart / app quit) don't trigger it; three consecutive sub-30s lives trip a crash-loop guard that stops auto-respawning and surfaces an error.
+
+## v1.5.12 — 2026-08-16 — 2026-08-16
 
 加固:更新失败全程可见 + 卡死路由快速放弃。
 

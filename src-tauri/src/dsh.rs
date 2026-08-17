@@ -55,10 +55,14 @@ pub(crate) static BOOT_URL: OnceLock<String> = OnceLock::new();
 
 /// A DSH subprocess we spawned (and therefore own the lifecycle of).
 struct DshInner {
-    /// The cmd.exe shim; its grandchild node is the real 3080 host.
-    child: Child,
     pid: u32,
 }
+
+/// True while teardown/restart intentionally kill the owned child — the
+/// supervisor watcher must not treat those exits as crashes.
+static INTENTIONAL_STOP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Consecutive short-lived respawns; the crash-loop guard's trip counter.
+static QUICK_DEATHS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 /// Managed state holding the owned subprocess, if any.
 /// `None` ⇒ attached mode (do not kill on exit).
@@ -353,11 +357,16 @@ fn try_candidate(app: &AppHandle, candidate: &Candidate) -> Attempt {
     let deadline = Instant::now() + candidate.window;
     loop {
         if probe_ready_once() {
-            // Hand the owned child to managed state; teardown kills its tree.
+            // The state keeps only the pid (for teardown's tree kill); the
+            // Child handle moves to the supervisor thread, which reaps the
+            // process and reacts to unexpected exits.
             let state = app.state::<DshState>();
-            *state.inner.lock().unwrap() = Some(DshInner { child, pid });
+            *state.inner.lock().unwrap() = Some(DshInner { pid });
+            INTENTIONAL_STOP.store(false, std::sync::atomic::Ordering::Relaxed);
             emit_ready(app, false, Some(candidate.label.clone()));
             crate::menu::install(app.clone());
+            let app2 = app.clone();
+            std::thread::spawn(move || supervise_child(app2, child, pid, Instant::now()));
             return Attempt::Ready;
         }
         // A missing command exits immediately; surface that instead of
@@ -373,6 +382,73 @@ fn try_candidate(app: &AppHandle, candidate: &Candidate) -> Attempt {
             return Attempt::Failed("就绪超时\n".to_string());
         }
         std::thread::sleep(PROBE_INTERVAL);
+    }
+}
+
+/// One supervision event line to dsh.log.
+fn supervision_log(line: &str) {
+    use std::io::Write;
+    let path = log_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(file, "[dsh-desktop] {line}");
+    }
+}
+
+/// Watch the owned DSH child and heal the stack when it dies unexpectedly
+/// (a DSH crash, or dshmarket's self-restart killing the host for an update).
+/// Expected exits (teardown / tray restart) set INTENTIONAL_STOP first.
+fn supervise_child(app: AppHandle, mut child: Child, pid: u32, spawned_at: Instant) {
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => {}
+            Err(_) => return,
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    let _ = child.wait(); // reap
+    if INTENTIONAL_STOP.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    supervision_log(&format!("supervised dsh web (pid {pid}) exited unexpectedly; healing"));
+    // Crash-loop guard: three consecutive children that lived under 30s stop
+    // the auto-respawn and surface an error instead of spinning forever.
+    if spawned_at.elapsed() < Duration::from_secs(30) {
+        let deaths = QUICK_DEATHS.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        if deaths >= 3 {
+            supervision_log(&format!("supervised dsh web (pid {pid}) crashed 3x quickly; auto-respawn stopped"));
+            let _ = app.emit(
+                "dsh-status",
+                json!({ "status": "error", "message": "DSH 反复意外退出,已停止自动重启——详见 dsh.log,可稍后用托盘「重启 dsh web(后端)」重试" }),
+            );
+            show_boot_page(&app);
+            return;
+        }
+    } else {
+        QUICK_DEATHS.store(0, std::sync::atomic::Ordering::SeqCst);
+    }
+    // dshmarket's restart helper races a replacement onto 3080 ~1.5s after
+    // the host dies; that replacement is an orphan outside our supervision
+    // (a later quit would not stop it), so let it land, clear the port, and
+    // spawn our own child instead.
+    std::thread::sleep(Duration::from_millis(2500));
+    kill_port_listeners();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while probe_ready_once() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    startup(app.clone());
+    if probe_ready_once() {
+        // The window usually still holds the dead webchat page — force a
+        // reload so it reattaches to the fresh host.
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.eval(&format!("window.location.replace('{DSH_BASE}/')"));
+        }
+    } else {
+        show_boot_page(&app);
     }
 }
 
@@ -630,13 +706,14 @@ fn kill_port_listeners() {
 /// Tear down the owned subprocess tree (if we spawned one). Safe to call from
 /// attached mode — it is a no-op then.
 pub fn teardown(app: &AppHandle) {
+    INTENTIONAL_STOP.store(true, std::sync::atomic::Ordering::Relaxed);
     let state = app.state::<DshState>();
     let mut guard = state.inner.lock().unwrap();
-    if let Some(mut inner) = guard.take() {
+    if let Some(inner) = guard.take() {
         // Child::kill only reaps the cmd shim on Windows; taskkill /T kills the
-        // whole node tree so no orphan keeps holding 3080.
+        // whole node tree so no orphan keeps holding 3080. The supervisor
+        // thread reaps the Child and stays quiet (intentional stop).
         kill_tree(inner.pid);
-        let _ = inner.child.wait();
     }
 }
 
