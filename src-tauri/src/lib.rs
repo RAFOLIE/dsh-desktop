@@ -9,7 +9,7 @@ mod update;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, WindowEvent,
+    AppHandle, Emitter, Manager, WindowEvent,
 };
 
 /// AppUserModelID stamped on toasts; must match the registry registration in
@@ -56,15 +56,11 @@ fn open_path(app: AppHandle, path: String) {
     let _ = app.opener().open_path(path, None::<&str>);
 }
 
-/// Tray「环境信息」: show the window and navigate it to the env panel
-/// (the boot page routes on `#env`; from the webchat this navigates away,
-/// the panel's 返回聊天 button comes back).
+/// Tray「环境信息」: show the window and open the env overlay. The shell stays
+/// loaded next to the webchat iframe, so this is a plain event — no navigation.
 fn open_env_page(app: &AppHandle) {
     show_main_window(app);
-    if let (Some(url), Some(window)) = (dsh::BOOT_URL.get(), app.get_webview_window("main")) {
-        let js = format!("window.location.replace('{}#env')", url.replace('\'', "\\'"));
-        let _ = window.eval(&js);
-    }
+    let _ = app.emit("show-env", ());
 }
 
 /// Frontend-invoked custom dsh path from the notfound dialog: validates it
@@ -79,6 +75,54 @@ fn dsh_custom_path(app: AppHandle, path: String) -> Result<(), String> {
 fn dsh_exit(app: AppHandle) {
     dsh::teardown(&app);
     app.exit(0);
+}
+
+// --- Titlebar window controls, as app commands. The frontend window-plugin
+// calls (plugin:window|*) silently no-op'd in this setup while custom
+// commands (the same channel env_info uses) worked fine; driving the window
+// from Rust needs no capability entries and sidesteps that entirely. ---
+
+#[tauri::command]
+fn window_minimize(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.minimize();
+    }
+}
+
+#[tauri::command]
+fn window_toggle_maximize(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let maximized = w.is_maximized().unwrap_or(false);
+        if maximized {
+            let _ = w.unmaximize();
+        } else {
+            let _ = w.maximize();
+        }
+    }
+}
+
+/// Same path as the native X would take: CloseRequested → hide to tray.
+#[tauri::command]
+fn window_close(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.close();
+    }
+}
+
+/// Titlebar drag: invoked on mousedown in the drag strip. The OS caption
+/// semantics (move, and double-click → maximize) come along for free.
+#[tauri::command]
+fn window_start_drag(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.start_dragging();
+    }
+}
+
+#[tauri::command]
+fn window_is_maximized(app: AppHandle) -> bool {
+    app.get_webview_window("main")
+        .and_then(|w| w.is_maximized().ok())
+        .unwrap_or(false)
 }
 
 /// Show and focus the main window (tray double-click / Open DSH menu item /
@@ -174,7 +218,7 @@ pub fn run() {    tauri::Builder::default()
         }))
         .plugin(tauri_plugin_opener::init())
         .manage(dsh::DshState::new())
-        .invoke_handler(tauri::generate_handler![dsh_retry, dsh_download, dsh_custom_path, dsh_install_npm, dsh_npm_probe, env_info, open_path, dsh_exit])
+        .invoke_handler(tauri::generate_handler![dsh_retry, dsh_download, dsh_custom_path, dsh_install_npm, dsh_npm_probe, env_info, open_path, dsh_exit, window_minimize, window_toggle_maximize, window_close, window_start_drag, window_is_maximized])
         .setup(|app| {
             #[cfg(windows)]
             ensure_toast_aumid();
@@ -191,6 +235,15 @@ pub fn run() {    tauri::Builder::default()
             )
             .title("DeepSeek Harness")
             .inner_size(1280.0, 800.0)
+            .min_inner_size(720.0, 520.0)
+            // Custom title bar: the shell stays loaded for the whole session
+            // (boot view + webchat iframe + env overlay), so the bar lives in
+            // the page itself and the native frame is dropped entirely.
+            .decorations(false)
+            // Runs in every frame on document creation; self-guards on
+            // `location.origin === 'http://127.0.0.1:3080'` so it installs the
+            // link context menu exactly inside the webchat iframe.
+            .initialization_script(menu::MENU_SCRIPT)
             // WebView2's default drag-drop handler swallows file drops before
             // the page sees them, so HTML5 drag-and-drop (image attachments)
             // only works with the handler disabled — the tauri-documented
@@ -206,20 +259,6 @@ pub fn run() {    tauri::Builder::default()
                     let _ = app.opener().open_url(url, None::<&str>);
                 });
                 tauri::webview::NewWindowResponse::Deny
-            })
-            // Capture the boot page's real URL when it finishes loading.
-            // Right after build the webview still sits on about:blank, so a
-            // build-time url() is unusable — tray "重启 DSH" needs the real
-            // URL to hand the window back to the boot page. First real page
-            // wins (OnceLock); the later webchat load cannot overwrite it.
-            .on_page_load(|_webview, payload| {
-                use tauri::webview::PageLoadEvent;
-                if payload.event() == PageLoadEvent::Finished {
-                    let url = payload.url().to_string();
-                    if !url.starts_with("about:") {
-                        let _ = dsh::BOOT_URL.set(url);
-                    }
-                }
             })
             .build()?;
 

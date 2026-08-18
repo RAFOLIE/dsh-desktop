@@ -2,34 +2,17 @@
 //!
 //! The WebView2 default menu is a generic Edge menu: items like "在新窗口中
 //! 打开链接" actually shell out to the system browser (wry's NewWindowRequested
-//! fallback) and several entries are dead weight. After the shell navigates to
-//! the native webchat, poll-inject a small script that replaces the menu on
-//! `<a href>` right-clicks with two honest items: open in the system browser
-//! (reusing the same new-window fallback) and copy the link. Non-link
-//! right-clicks keep the default menu.
+//! fallback) and several entries are dead weight. The webchat loads inside the
+//! shell's iframe now, so the script rides along as a webview initialization
+//! script — WebView2 runs those in every frame, and the script self-guards on
+//! `location.origin`, so it installs exactly once per webchat document and
+//! no-ops on the shell's own page. It replaces the menu on `<a href>`
+//! right-clicks with two honest items: open in the system browser (reusing the
+//! same new-window fallback) and copy the link. Non-link right-clicks keep the
+//! default menu.
 
-use std::time::Duration;
-use tauri::{AppHandle, Manager};
-
-/// Poll-inject the menu script until it lands on the 3080 page.
-///
-/// The boot page runs on tauri.localhost first; the script self-guards on
-/// `location.origin` plus an install flag, so extra attempts are no-ops. The
-/// webchat is an SPA — one successful install survives for the session.
-pub fn install(app: AppHandle) {
-    std::thread::spawn(move || {
-        for _ in 0..45 {
-            if let Some(webview) = app.get_webview_window("main") {
-                let _ = webview.eval(MENU_SCRIPT);
-            }
-            std::thread::sleep(Duration::from_secs(2));
-        }
-    });
-}
-
-/// Idempotent installer + minimal custom menu, vanilla JS, dark styling to
-/// match the webchat.
-const MENU_SCRIPT: &str = r#"
+/// Registered at window build time (`initialization_script`); see module docs.
+pub(crate) const MENU_SCRIPT: &str = r#"
 (function () {
   if (window.__dshLinkMenu) return;
   if (location.origin !== 'http://127.0.0.1:3080') return;

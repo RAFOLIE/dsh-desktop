@@ -15,13 +15,41 @@ body,
   height: 100%;
 }
 
-.boot {
+/* --- Persistent shell: title bar on top, one content area below --- */
+
+.shell {
   height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #0f1115;
+  color: #e6e6e6;
+  overflow: hidden;
+}
+
+.content {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+/* The webchat iframe fills the content area; mounted for the whole session
+   once DSH is up, hidden while boot/error/update-wait views cover it. */
+.webchat {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #0f1115;
+}
+
+.boot-wrap {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #0f1115;
-  color: #e6e6e6;
 }
 
 .state {
@@ -110,40 +138,101 @@ button:hover {
   }
 }
 
-/* --- Top-left header: app name + version pill with update indicator --- */
+/* --- Custom title bar (window is undecorated): name → env overlay, version
+       pill with the update story, drag region, window controls --- */
 
-.app-header {
-  position: fixed;
-  top: 14px;
-  left: 18px;
+.titlebar {
+  position: relative;
+  z-index: 30;
   display: flex;
   align-items: center;
   gap: 10px;
-  z-index: 10;
+  height: 40px;
+  flex: none;
+  padding-left: 12px;
+  background: #161a22;
+  border-bottom: 1px solid #21262d;
   user-select: none;
 }
 
+.tb-logo {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
 .app-name {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: #c9d1d9;
   letter-spacing: 0.2px;
   background: transparent;
   border: none;
-  padding: 0;
+  padding: 4px 6px;
+  margin-left: -4px;
   cursor: pointer;
 }
 
 .app-name:hover {
   color: #58a6ff;
+  background: rgba(88, 166, 255, 0.08);
 }
 
-/* --- Env panel (Comfy Desktop StatusFactPanel style) --- */
+.tb-env-hint {
+  font-size: 11px;
+  color: #58a6ff;
+  border: 1px solid #58a6ff44;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+/* Flexible drag region between the identity cluster and the window buttons. */
+.titlebar-drag {
+  flex: 1;
+  align-self: stretch;
+}
+
+.tb-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #9aa0a6;
+  cursor: default;
+}
+
+.tb-btn svg {
+  width: 10px;
+  height: 10px;
+}
+
+.tb-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e6e6e6;
+}
+
+.tb-close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+/* --- Env panel overlay (Comfy Desktop StatusFactPanel style) --- */
+
+.env-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  overflow-y: auto;
+  background: #0f1115;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
+}
 
 .env-page {
-  position: fixed;
-  inset: 56px 0 0 0;
-  overflow-y: auto;
   padding: 8px 22px 32px;
   max-width: 760px;
   margin: 0 auto;

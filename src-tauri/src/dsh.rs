@@ -19,7 +19,7 @@
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -47,11 +47,6 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// Local port the DSH web server listens on; also the anchor for finding an
 /// attached instance's PID at restart time.
 const DSH_PORT: u16 = 3080;
-
-/// Boot-page URL captured at window build. Restart hands the webview back to
-/// this page so the standard `dsh-status` event flow re-drives the handoff to
-/// the fresh webchat, exactly like a cold start.
-pub(crate) static BOOT_URL: OnceLock<String> = OnceLock::new();
 
 /// A DSH subprocess we spawned (and therefore own the lifecycle of).
 struct DshInner {
@@ -313,7 +308,6 @@ pub fn startup(app: AppHandle) {
     // Attach path: DSH already up — never spawn, never kill on exit.
     if probe_ready_once() {
         emit_ready(&app, true, None);
-        crate::menu::install(app);
         return;
     }
 
@@ -364,7 +358,6 @@ fn try_candidate(app: &AppHandle, candidate: &Candidate) -> Attempt {
             *state.inner.lock().unwrap() = Some(DshInner { pid });
             INTENTIONAL_STOP.store(false, std::sync::atomic::Ordering::Relaxed);
             emit_ready(app, false, Some(candidate.label.clone()));
-            crate::menu::install(app.clone());
             let app2 = app.clone();
             std::thread::spawn(move || supervise_child(app2, child, pid, Instant::now()));
             return Attempt::Ready;
@@ -564,7 +557,6 @@ fn supervise_child(app: AppHandle, mut child: Child, pid: u32, spawned_at: Insta
                 "dsh-status",
                 json!({ "status": "error", "message": "DSH 反复意外退出,已停止自动重启——详见 dsh.log,可稍后用托盘「重启 dsh web(后端)」重试" }),
             );
-            show_boot_page(&app);
             return;
         }
     } else {
@@ -580,16 +572,10 @@ fn supervise_child(app: AppHandle, mut child: Child, pid: u32, spawned_at: Insta
     while probe_ready_once() && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(500));
     }
+    // startup() re-emits `ready`, and the persistent shell reloads its
+    // webchat iframe on that event — no window.eval navigation to a page
+    // we no longer control.
     startup(app.clone());
-    if probe_ready_once() {
-        // The window usually still holds the dead webchat page — force a
-        // reload so it reattaches to the fresh host.
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.eval(&format!("window.location.replace('{DSH_BASE}/')"));
-        }
-    } else {
-        show_boot_page(&app);
-    }
 }
 
 /// Frontend "使用此路径启动" from the notfound dialog: remember the
@@ -756,16 +742,19 @@ pub fn download_and_start(app: AppHandle) {
     });
 }
 
-/// Tray "重启 DSH": hand the webview back to the boot page, kill whatever DSH
-/// is on the port (owned *or* attached), wait out its death, then run the
-/// normal startup chain — the boot page re-drives the webchat handoff from
-/// there. Sessions are durable in `~/.dsh`, so nothing is lost.
+/// Tray "重启 dsh web(后端)": tear down + re-run the startup chain. The shell
+/// stays loaded the whole time: a `starting` event swaps it back to the boot
+/// view, and the chain's `ready` events reload the webchat iframe — the same
+/// flow as a cold start, no page navigation involved.
 pub fn restart(app: AppHandle) {
     // Pop the window first so a restart triggered while hidden in the tray is
     // visibly underway instead of looking like a no-op.
     crate::show_main_window(&app);
     std::thread::spawn(move || {
-        show_boot_page(&app);
+        let _ = app.emit(
+            "dsh-status",
+            json!({ "status": "starting", "method": "正在重启 dsh web" }),
+        );
         teardown(&app);
         kill_port_listeners();
         // Wait for the old instance to stop answering so startup's attach
@@ -775,46 +764,7 @@ pub fn restart(app: AppHandle) {
             std::thread::sleep(Duration::from_millis(500));
         }
         startup(app.clone());
-        ensure_webchat_shown(&app);
     });
-}
-
-/// After a restart, the boot page normally hands the window to the fresh
-/// webchat on its `ready` listener. If that handoff is lost — the page load
-/// missed the event, or the captured boot URL was unusable — the window sits
-/// on a dead page while DSH is up. Poll briefly for the handoff, then force
-/// the navigation.
-fn ensure_webchat_shown(app: &AppHandle) {
-    if !probe_ready_once() {
-        return;
-    }
-    let Some(window) = app.get_webview_window("main") else {
-        return;
-    };
-    let on_webchat = || {
-        window
-            .url()
-            .map(|u| u.host_str() == Some("127.0.0.1") && u.port() == Some(DSH_PORT))
-            .unwrap_or(false)
-    };
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while !on_webchat() && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(250));
-    }
-    if !on_webchat() {
-        let _ = window.eval(&format!(
-            "window.location.replace('{DSH_BASE}/')"
-        ));
-    }
-}
-
-/// Navigate the webview (currently the remote webchat) back to the app's boot
-/// page, whose `dsh-status` listener takes over from here.
-fn show_boot_page(app: &AppHandle) {
-    if let (Some(url), Some(window)) = (BOOT_URL.get(), app.get_webview_window("main")) {
-        let js = format!("window.location.replace('{}')", url.replace('\'', "\\'"));
-        let _ = window.eval(&js);
-    }
 }
 
 /// Kill any process still listening on the DSH port: an attached instance we

@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.6.2 — 2026-08-18
+
+新功能:**自绘标题栏**——顶栏常驻,点名字开环境信息(iframe 常驻壳架构)。
+
+- 系统标题栏移除(`decorations: false`),由应用自绘整条顶栏:logo + 「DeepSeek Harness」可点名字(点击展开/收起环境面板) + 版本胶囊(更新圆环/对勾状态机迁入顶栏,全程可见) + 拖拽区 + 最小化/最大化/关闭按钮(关闭仍隐藏到托盘)
+- **架构**:壳不再 `location.replace` 跳转到 webchat——webchat 改为跑在同窗 iframe 里(实测 3080 响应头无 X-Frame-Options/CSP,可嵌入)。壳的前端从此常驻:boot 视图 ↔ 聊天 ↔ 环境面板全在页内切换,聊天状态在环境面板期间保留
+- 环境面板改为顶栏下展开的 overlay(不卸载 iframe);托盘「环境信息」经事件打开,不再靠 URL 导航
+- 链接右键菜单改用 WebView2 初始化脚本注入(对所有 frame 生效,含 iframe;脚本自带 origin 守卫),原先的 45×2s 轮询注入退役
+- 重启/监护自愈的"窗口交给 webchat"机制全部改为事件驱动:`ready` 事件幂等收敛为状态迁移,后端重启时 iframe 自动重载;BOOT_URL 捕获 hack 与三处 `location.replace` eval 退役
+- 窗口控制(最小化/最大化/关闭/拖拽)走自定义 Rust 命令:前端窗口插件调用在本环境静默失效,而自定义命令通道稳定,Rust 侧直调不走前端 ACL
+- Win+方向键贴靠/无边框边缘缩放等原生窗口机制不受影响(实测 snap 正常)
+
+Feature: a custom in-app title bar — always visible, click the name to open the env panel (persistent-shell iframe architecture).
+
+- The native title bar is gone (`decorations: false`); the app draws its own: logo, a clickable name (toggles the env overlay), the version pill with the update ring/check story (now visible in chat too), a drag region, and min/max/close (close still hides to tray)
+- The shell no longer navigates away to the webchat — it runs in a same-window iframe (3080 serves no frame-blocking headers, verified). Boot ↔ chat ↔ env are in-page views now; chat state survives env-panel visits
+- The env panel is an overlay sliding under the title bar (iframe stays mounted); the tray entry opens it via event instead of URL navigation
+- The webchat link context menu now rides along as a WebView2 initialization script (runs in every frame, origin-guarded); the old 45×2s poll-inject is retired
+- Restart/supervision handoff is event-driven: `ready` re-emits collapse into transitions, the iframe auto-reloads when the backend restarts; the BOOT_URL capture hack and three `location.replace` evals are gone
+- Window controls (min/max/close/drag) go through custom Rust commands — the frontend window-plugin calls silently no-op'd here while the custom-command channel is rock solid, and Rust-side calls bypass the frontend ACL entirely
+- Native window behaviors (snap, undecorated edge resize) are unaffected (snap verified live)
+
 ## v1.6.1 — 2026-08-17
 
 新功能:**环境面板**(模仿 Comfy Desktop 的 StatusFactPanel,秋叶启动器式自用诊断)。
