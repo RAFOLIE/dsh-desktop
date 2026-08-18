@@ -70,6 +70,13 @@ fn dsh_restart_backend(app: AppHandle) {
     dsh::restart(app);
 }
 
+/// Panel/tray「重启前端(完整重启)」: fresh app process onto the same exe,
+/// owned DSH torn down — the new instance re-runs the whole chain.
+#[tauri::command]
+fn app_full_restart(app: AppHandle) {
+    update::restart_app(&app);
+}
+
 /// One-paste AI context: env facts + this session's log as a markdown
 /// bundle, saved beside the log and returned so the panel can also put it
 /// on the clipboard. Solves "AI has to hunt through the whole DSH install".
@@ -281,7 +288,7 @@ pub fn run() {    tauri::Builder::default()
         }))
         .plugin(tauri_plugin_opener::init())
         .manage(dsh::DshState::new())
-        .invoke_handler(tauri::generate_handler![dsh_retry, dsh_download, dsh_custom_path, dsh_install_npm, dsh_npm_probe, env_info, open_path, log_tail, diagnostic_export, dsh_restart_backend, dsh_exit, window_minimize, window_toggle_maximize, window_close, window_start_drag, window_is_maximized])
+        .invoke_handler(tauri::generate_handler![dsh_retry, dsh_download, dsh_custom_path, dsh_install_npm, dsh_npm_probe, env_info, open_path, log_tail, diagnostic_export, dsh_restart_backend, app_full_restart, dsh_exit, window_minimize, window_toggle_maximize, window_close, window_start_drag, window_is_maximized])
         .setup(|app| {
             // Session-start log rotation (ComfyUI-style) before anything logs
             // or spawns: previous session archived under a timestamped name.
@@ -334,10 +341,12 @@ pub fn run() {    tauri::Builder::default()
             // app — the name says so explicitly now (it used to read "重启
             // DSH", which users reasonably read as "this also updates").
             let restart = MenuItem::with_id(app, "restart", "重启 dsh web(后端)", true, None::<&str>)?;
+            let restart_app_item =
+                MenuItem::with_id(app, "restart-app", "重启前端(完整重启)", true, None::<&str>)?;
             let update = MenuItem::with_id(app, "update", "检查前端更新", true, None::<&str>)?;
             let env = MenuItem::with_id(app, "env", "环境信息", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出(关闭 DSH)", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &restart, &update, &env, &quit])?;
+            let menu = Menu::with_items(app, &[&open, &restart, &restart_app_item, &update, &env, &quit])?;
 
             TrayIconBuilder::with_id("main-tray")
                 .icon(
@@ -352,6 +361,7 @@ pub fn run() {    tauri::Builder::default()
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "open" => show_main_window(app),
                     "restart" => dsh::restart(app.clone()),
+                    "restart-app" => update::restart_app(app),
                     "update" => update::check_now(app.clone()),
                     "env" => open_env_page(app),
                     "quit" => quit_dsh(app),

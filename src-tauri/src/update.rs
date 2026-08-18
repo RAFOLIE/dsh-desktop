@@ -239,11 +239,26 @@ fn download_with_curl(url: &str, dest: &Path, size: u64, digest: Option<&str>) -
     )))
 }
 
+/// Tray/panel「重启前端(完整重启)」: arm the detached relaunch helper onto the
+/// same exe, tear down the owned DSH tree, then exit. The fresh instance
+/// re-runs the whole startup chain (shell + DSH backend) — the go-to when a
+/// wedged plugin leaves even the webchat unusable. Only exits when the
+/// helper is armed, so a failed arm never turns a restart into a quit.
+pub fn restart_app(app: &AppHandle) {
+    if let Ok(exe) = tauri::utils::platform::current_exe() {
+        if relaunch_app(&exe) {
+            crate::dsh::teardown(app);
+            app.exit(0);
+        }
+    }
+}
+
 /// Relaunch the app onto the freshly swapped exe. A detached helper waits for
 /// this process to exit (releasing the single-instance lock), then starts the
 /// new exe. The exit skips DSH teardown on purpose: a running webchat backend
 /// stays up and the new instance attaches to it instead of respawning.
-fn relaunch_app(exe: &Path) {
+/// Returns whether the helper armed successfully.
+fn relaunch_app(exe: &Path) -> bool {
     let mut command = std::process::Command::new("cmd");
     #[cfg(windows)]
     {
@@ -266,10 +281,16 @@ fn relaunch_app(exe: &Path) {
             .arg(format!("sleep 3 && '{}'", exe.display()));
     }
     match command.spawn() {
-        Ok(_) => log_line("[dsh-desktop] relaunch helper armed (starts the new exe in ~3s)"),
-        Err(e) => log_line(&format!(
-            "[dsh-desktop] relaunch helper failed ({e}); the new version activates on next manual launch"
-        )),
+        Ok(_) => {
+            log_line("[dsh-desktop] relaunch helper armed (starts the new exe in ~3s)");
+            true
+        }
+        Err(e) => {
+            log_line(&format!(
+                "[dsh-desktop] relaunch helper failed ({e}); the new version activates on next manual launch"
+            ));
+            false
+        }
     }
 }
 

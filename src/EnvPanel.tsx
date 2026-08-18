@@ -579,6 +579,17 @@ export default function EnvPanel({
                   <button type="button" role="menuitem" onClick={exportBundle}>
                     导出诊断信息
                   </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      if (!window.confirm("完整重启应用?前端与 DSH 后端都会重启,会话数据不丢失")) return;
+                      invoke("app_full_restart").catch(() => {});
+                    }}
+                  >
+                    重启前端(完整重启)
+                  </button>
                 </div>
               )}
           </div>
