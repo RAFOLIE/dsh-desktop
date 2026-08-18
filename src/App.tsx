@@ -41,6 +41,18 @@ function App() {
   const [checkVisible, setCheckVisible] = useState(false);
   const [version, setVersion] = useState("");
   const [npmProbe, setNpmProbe] = useState<NpmProbe | null>(null);
+  const [view, setView] = useState<"boot" | "env">(
+    window.location.hash === "#env" ? "env" : "boot",
+  );
+
+  const openEnv = () => {
+    window.location.hash = "env";
+    setView("env");
+  };
+  const backToBoot = () => {
+    window.location.hash = "";
+    setView("boot");
+  };
 
   // Registry speed probe runs once when the notfound chooser appears; the
   // faster source becomes the primary install button, the other stays as an
@@ -131,7 +143,14 @@ function App() {
   return (
     <main className="boot">
       <header className="app-header">
-        <span className="app-name">DeepSeek Harness</span>
+        <button
+          type="button"
+          className="app-name"
+          title="查看环境配置"
+          onClick={openEnv}
+        >
+          DeepSeek Harness
+        </button>
         <span className="version-pill" data-state={update.state}>
           <span className="version-text">v{displayVersion}</span>
           {spinnerActive && (
@@ -151,6 +170,10 @@ function App() {
         </span>
       </header>
 
+      {view === "env" ? (
+        <EnvPage onBack={backToBoot} />
+      ) : (
+      <>
       {status.status === "starting" && (
         <div className="state">
           <div className="spinner" aria-hidden="true" />
@@ -281,7 +304,156 @@ function App() {
           </button>
         </div>
       )}
+      </>
+      )}
     </main>
+  );
+}
+
+/** Rust-side env_info payload (all fields nullable — probes degrade). */
+type EnvInfo = {
+  app?: { version?: string; installDir?: string };
+  dsh?: {
+    portAnswering?: boolean;
+    owner?: { pid?: number; cmd?: string; chain?: string; owned?: boolean } | null;
+    dshCmd?: string | null;
+    dshCwd?: string | null;
+    customPath?: string | null;
+    whereDsh?: string | null;
+    localInstall?: { shim?: string; root?: string } | null;
+    preferNpx?: boolean;
+  };
+  node?: { path?: string | null; version?: string | null };
+  plugins?: { dshDesktopPlugin?: string | null; dshmarket?: string | null };
+  profileDir?: string;
+  logTail?: string[];
+};
+
+/** One label-over-value fact row (Comfy Desktop StatusFactPanel style). */
+function Fact({
+  label,
+  value,
+  mono,
+  openable,
+}: {
+  label: string;
+  value: string | null | undefined;
+  mono?: boolean;
+  openable?: boolean;
+}) {
+  const shown = value === null || value === undefined || value === "" ? "—" : value;
+  return (
+    <div className="env-row">
+      <div className="env-label">{label}</div>
+      <div className="env-value-wrap">
+        <span className={`env-value${mono ? " mono" : ""}`}>{shown}</span>
+        {shown !== "—" && (
+          <>
+            <button
+              type="button"
+              className="env-mini"
+              title="复制"
+              onClick={() => navigator.clipboard?.writeText(shown)}
+            >
+              复制
+            </button>
+            {openable && (
+              <button
+                type="button"
+                className="env-mini"
+                title="在资源管理器中打开"
+                onClick={() => invoke("open_path", { path: shown })}
+              >
+                打开目录
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Environment panel: Comfy-Desktop-style sectioned facts + console tail. */
+function EnvPage({ onBack }: { onBack: () => void }) {
+  const [info, setInfo] = useState<EnvInfo | null>(null);
+  const [error, setError] = useState("");
+  const load = () => {
+    setError("");
+    setInfo(null);
+    invoke<EnvInfo>("env_info")
+      .then(setInfo)
+      .catch((e: string) => setError(String(e)));
+  };
+  useEffect(() => {
+    load();
+  }, []);
+
+  const dsh = info?.dsh;
+  const owner = dsh?.owner;
+  return (
+    <div className="env-page">
+      <div className="env-actions">
+        <span className="env-title">环境配置</span>
+        <button type="button" className="btn-secondary" onClick={load}>
+          刷新
+        </button>
+        <button type="button" className="btn-secondary" onClick={onBack}>
+          ← 返回启动页
+        </button>
+        <button type="button" className="btn-secondary" onClick={() => window.location.replace(WEBCHAT_URL)}>
+          返回聊天
+        </button>
+      </div>
+      {error !== "" && <div className="detail">{error}</div>}
+      {info === null && error === "" && <div className="detail">正在采集环境信息…</div>}
+
+      {info !== null && (
+        <>
+          <section className="env-section">
+            <div className="env-section-title">运行状态</div>
+            <Fact label="DSH 端口 (3080)" value={dsh?.portAnswering ? "应答正常" : "无应答"} />
+            <Fact label="占用进程 PID" value={owner?.pid !== undefined ? String(owner.pid) : null} />
+            <Fact label="进程命令行" value={owner?.cmd ?? null} mono />
+            <Fact
+              label="归属"
+              value={owner === null || owner === undefined ? null : owner.owned ? "本应用子进程(受监护)" : "外部实例(不归本应用管)"}
+            />
+            <Fact label="父链" value={owner?.chain ?? null} mono />
+          </section>
+
+          <section className="env-section">
+            <div className="env-section-title">DSH 内核</div>
+            <Fact label="where dsh" value={dsh?.whereDsh ?? null} mono openable />
+            <Fact label="自定义路径" value={dsh?.customPath ?? null} mono openable />
+            <Fact label="本地安装" value={dsh?.localInstall?.shim ?? null} mono openable />
+            <Fact label="DSH_CMD 环境变量" value={dsh?.dshCmd ?? null} mono />
+            <Fact label="DSH_CWD 环境变量" value={dsh?.dshCwd ?? null} mono />
+            <Fact label="npx 回退已授权" value={dsh?.preferNpx ? "是" : "否"} />
+            <Fact label="dsh-desktop-plugin" value={info.plugins?.dshDesktopPlugin ?? null} />
+            <Fact label="dshmarket" value={info.plugins?.dshmarket ?? null} />
+            <Fact label="Profile 目录" value={info.profileDir} mono openable />
+          </section>
+
+          <section className="env-section">
+            <div className="env-section-title">Node 环境</div>
+            <Fact label="node 路径" value={info.node?.path ?? null} mono openable />
+            <Fact label="node 版本" value={info.node?.version ?? null} />
+          </section>
+
+          <section className="env-section">
+            <div className="env-section-title">本应用</div>
+            <Fact label="版本" value={info.app?.version} />
+            <Fact label="安装目录" value={info.app?.installDir} mono openable />
+          </section>
+
+          <section className="env-section">
+            <div className="env-section-title">日志 (dsh.log 尾部)</div>
+            <pre className="env-console">{(info.logTail ?? []).join("\n") || "(空)"}</pre>
+          </section>
+        </>
+      )}
+    </div>
   );
 }
 

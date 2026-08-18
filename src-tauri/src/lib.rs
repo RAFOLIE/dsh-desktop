@@ -43,6 +43,30 @@ fn dsh_npm_probe() -> serde_json::Value {
     dsh::npm_probe()
 }
 
+/// Frontend-invoked environment facts for the env panel.
+#[tauri::command]
+fn env_info(app: AppHandle) -> serde_json::Value {
+    dsh::env_info(&app)
+}
+
+/// Frontend-invoked "open this directory in Explorer" for env-panel paths.
+#[tauri::command]
+fn open_path(app: AppHandle, path: String) {
+    use tauri_plugin_opener::OpenerExt;
+    let _ = app.opener().open_path(path, None::<&str>);
+}
+
+/// Tray「环境信息」: show the window and navigate it to the env panel
+/// (the boot page routes on `#env`; from the webchat this navigates away,
+/// the panel's 返回聊天 button comes back).
+fn open_env_page(app: &AppHandle) {
+    show_main_window(app);
+    if let (Some(url), Some(window)) = (dsh::BOOT_URL.get(), app.get_webview_window("main")) {
+        let js = format!("window.location.replace('{}#env')", url.replace('\'', "\\'"));
+        let _ = window.eval(&js);
+    }
+}
+
 /// Frontend-invoked custom dsh path from the notfound dialog: validates it
 /// exists, persists it, and retries startup with it leading the chain.
 #[tauri::command]
@@ -150,7 +174,7 @@ pub fn run() {    tauri::Builder::default()
         }))
         .plugin(tauri_plugin_opener::init())
         .manage(dsh::DshState::new())
-        .invoke_handler(tauri::generate_handler![dsh_retry, dsh_download, dsh_custom_path, dsh_install_npm, dsh_npm_probe, dsh_exit])
+        .invoke_handler(tauri::generate_handler![dsh_retry, dsh_download, dsh_custom_path, dsh_install_npm, dsh_npm_probe, env_info, open_path, dsh_exit])
         .setup(|app| {
             #[cfg(windows)]
             ensure_toast_aumid();
@@ -205,8 +229,9 @@ pub fn run() {    tauri::Builder::default()
             // DSH", which users reasonably read as "this also updates").
             let restart = MenuItem::with_id(app, "restart", "重启 dsh web(后端)", true, None::<&str>)?;
             let update = MenuItem::with_id(app, "update", "检查前端更新", true, None::<&str>)?;
+            let env = MenuItem::with_id(app, "env", "环境信息", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出(关闭 DSH)", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &restart, &update, &quit])?;
+            let menu = Menu::with_items(app, &[&open, &restart, &update, &env, &quit])?;
 
             TrayIconBuilder::with_id("main-tray")
                 .icon(
@@ -222,6 +247,7 @@ pub fn run() {    tauri::Builder::default()
                     "open" => show_main_window(app),
                     "restart" => dsh::restart(app.clone()),
                     "update" => update::check_now(app.clone()),
+                    "env" => open_env_page(app),
                     "quit" => quit_dsh(app),
                     _ => {}
                 })

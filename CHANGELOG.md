@@ -1,6 +1,25 @@
 # Changelog
 
-## v1.6.0 — 2026-08-17
+## v1.6.1 — 2026-08-17
+
+新功能:**环境面板**(模仿 Comfy Desktop 的 StatusFactPanel,秋叶启动器式自用诊断)。
+
+- 启动页左上角「DeepSeek Harness」名字**可点击**进入二级环境页;托盘右键新增「**环境信息**」随时从聊天页进入(带「返回聊天」)
+- 环境页分区展示真实数据(Comfy Desktop 式标签在上/值在下+发丝线+复制按钮+路径可打开目录):
+  - **运行状态**:3080 应答、占用进程 PID/命令行/父链、归属(本应用子进程受监护 / 外部实例)
+  - **DSH 内核**:where dsh、自定义路径、本地安装、DSH_CMD/DSH_CWD 残留、npx 回退、插件版本(dsh-desktop-plugin/dshmarket)、Profile 目录
+  - **Node 环境**:实际 node 路径+版本——一眼看清是不是 ComfyUI 等其它软件带的 node
+  - **本应用**:版本、安装目录
+  - **日志**:dsh.log 尾部 25 行控制台窗格
+- 全部数据采集独立降级(单项失败显示 —,页面永不卡死)
+
+Feature: an environment panel (modeled on Comfy Desktop's StatusFactPanel) for self-serve diagnostics.
+
+- The boot page's top-left name is now clickable into an env page; a new tray 「环境信息」 entry opens it any time from the webchat (with a back-to-chat button)
+- Sectioned real facts with copy buttons and open-in-Explorer for paths: DSH runtime (port, pid, command line, ownership chain), kernel chain (where dsh, custom path, env leftovers, plugin versions, profile dir), Node (actual path + version — spot when it belongs to ComfyUI or another AI app), the app itself, and a dsh.log tail console
+- Every probe degrades independently (missing facts show "—", the page never hangs)
+
+## v1.6.0 — 2026-08-17 — 2026-08-17
 
 新功能:桌面壳成为 DSH 的**监护进程(supervisor)**——DSH 意外退出自动愈合。
 

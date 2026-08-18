@@ -397,6 +397,146 @@ fn supervision_log(line: &str) {
     }
 }
 
+/// First `where <name>` hit, windowless.
+fn where_first(name: &str) -> Option<String> {
+    let mut command = Command::new("where");
+    command.arg(name);
+    apply_no_window(&mut command);
+    let output = command.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    text.lines()
+        .next()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+}
+
+/// One captured run of a program (`node --version` style).
+fn run_capture(program: &str, args: &[&str]) -> Option<String> {
+    use std::io::Read;
+    let mut child = Command::new(program)
+        .args(args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    let mut out = String::new();
+    if let Some(mut stdout) = child.stdout.take() {
+        let _ = stdout.read_to_string(&mut out);
+    }
+    let _ = child.wait();
+    let trimmed = out.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+/// Pid currently listening on the DSH port.
+fn port_listener_pid() -> Option<u32> {
+    let mut command = Command::new("netstat");
+    command.args(["-ano", "-p", "tcp"]);
+    apply_no_window(&mut command);
+    let output = command.output().ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let suffix = format!(":{DSH_PORT}");
+    text.lines().find_map(|line| {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        (fields.len() >= 5 && fields[0] == "TCP" && fields[1].ends_with(&suffix) && fields[4] != "0")
+            .then(|| fields[4].parse::<u32>().ok())
+            .flatten()
+    })
+}
+
+/// Who owns the DSH port: pid, command line, and whether the parent chain
+/// leads back to this app (ours) or to an external instance. PowerShell does
+/// the chain walk; JSON keeps the boundary parse-free.
+fn port_owner_info() -> Option<Value> {
+    let pid = port_listener_pid()?;
+    let script = format!(
+        "$p = Get-CimInstance Win32_Process -Filter 'ProcessId={pid}'; \
+         if ($null -eq $p) {{ exit 1 }}; \
+         $names = @($p.Name); $cur = $p; $owned = $false; \
+         for ($i = 0; $i -lt 5 -and $null -ne $cur; $i++) {{ \
+           if ($cur.Name -eq 'dsh-desktop-windowos.exe') {{ $owned = $true; break }}; \
+           $cur = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $cur.ParentProcessId); \
+           if ($null -ne $cur) {{ $names += $cur.Name }} \
+         }}; \
+         [pscustomobject]@{{ pid = $p.ProcessId; cmd = $p.CommandLine; chain = ($names -join ' <- '); owned = $owned }} | ConvertTo-Json -Compress"
+    );
+    let output = run_capture("powershell", &["-NoProfile", "-Command", &script])?;
+    serde_json::from_str(&output).ok()
+}
+
+/// Plugin package versions installed in the user's web profile.
+fn profile_plugin_versions() -> Value {
+    let read_version = |name: &str| -> Value {
+        let home = std::env::var("USERPROFILE").unwrap_or_default();
+        let manifest = Path::new(&home)
+            .join(".dsh")
+            .join("profiles")
+            .join("web")
+            .join("node_modules")
+            .join(name)
+            .join("package.json");
+        std::fs::read_to_string(manifest)
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+            .and_then(|doc| doc["version"].as_str().map(str::to_string))
+            .map(Value::String)
+            .unwrap_or(Value::Null)
+    };
+    json!({
+        "dshDesktopPlugin": read_version("dsh-desktop-plugin"),
+        "dshmarket": read_version("dshmarket"),
+    })
+}
+
+/// Last `n` lines of the shared shell log for the console pane.
+fn log_tail(n: usize) -> Vec<String> {
+    std::fs::read_to_string(log_path())
+        .map(|text| {
+            let lines: Vec<&str> = text.lines().collect();
+            let start = lines.len().saturating_sub(n);
+            lines[start..].iter().map(|l| l.to_string()).collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Environment facts for the env panel, modelled on Comfy Desktop's
+/// StatusFactPanel data shape: every field is gathered independently and
+/// degrades to null — the panel never hangs on a probe.
+pub fn env_info(app: &AppHandle) -> Value {
+    let home = std::env::var("USERPROFILE").unwrap_or_default();
+    let settings = read_settings();
+    let install_dir = tauri::utils::platform::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|p| p.display().to_string()));
+    json!({
+        "app": {
+            "version": app.package_info().version.to_string(),
+            "installDir": install_dir,
+        },
+        "dsh": {
+            "portAnswering": probe_ready_once(),
+            "owner": port_owner_info(),
+            "dshCmd": std::env::var("DSH_CMD").ok().filter(|v| !v.trim().is_empty()),
+            "dshCwd": std::env::var("DSH_CWD").ok().filter(|v| !v.trim().is_empty()),
+            "customPath": settings.get("customDshPath").and_then(Value::as_str),
+            "whereDsh": where_first("dsh"),
+            "localInstall": find_local_install().map(|(shim, root)| json!({ "shim": shim.display().to_string(), "root": root.display().to_string() })),
+            "preferNpx": prefer_npx(),
+        },
+        "node": {
+            "path": where_first("node"),
+            "version": run_capture("node", &["--version"]),
+        },
+        "plugins": profile_plugin_versions(),
+        "profileDir": Path::new(&home).join(".dsh").join("profiles").join("web").display().to_string(),
+        "logTail": log_tail(25),
+    })
+}
+
 /// Watch the owned DSH child and heal the stack when it dies unexpectedly
 /// (a DSH crash, or dshmarket's self-restart killing the host for an update).
 /// Expected exits (teardown / tray restart) set INTENTIONAL_STOP first.
