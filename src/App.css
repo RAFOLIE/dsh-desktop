@@ -146,19 +146,38 @@ button:hover {
   z-index: 30;
   display: flex;
   align-items: center;
-  gap: 10px;
   height: 40px;
   flex: none;
-  padding-left: 12px;
   background: #161a22;
   border-bottom: 1px solid #21262d;
   user-select: none;
 }
 
+/* Symmetric drag strips flanking the centered identity cluster. */
+.titlebar-drag {
+  flex: 1;
+  align-self: stretch;
+}
+
+/* Whale icon + name + version pill, truly centered (buttons sit at the far
+   right; the absolute cluster ignores them so it stays mid-window). */
+.tb-identity {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 440px);
+  overflow: hidden;
+}
+
 .tb-logo {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   flex: none;
+  user-select: none;
 }
 
 .app-name {
@@ -184,12 +203,6 @@ button:hover {
   border: 1px solid #58a6ff44;
   border-radius: 999px;
   padding: 1px 8px;
-}
-
-/* Flexible drag region between the identity cluster and the window buttons. */
-.titlebar-drag {
-  flex: 1;
-  align-self: stretch;
 }
 
 .tb-btn {

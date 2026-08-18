@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import appIcon from "./assets/app-icon.png";
 import "./App.css";
 
 /** Rust→frontend lifecycle payloads emitted on the `dsh-status` channel. */
@@ -353,56 +354,55 @@ function TitleBar({
     return () => window.clearInterval(timer);
   }, []);
 
-  const dragStrip = (
-    <div
-      className="titlebar-drag"
-      onMouseDown={(event) => {
-        if (event.button !== 0) return;
-        invoke("window_start_drag").catch(() => {});
-      }}
-      onDoubleClick={() => invoke("window_toggle_maximize").catch(() => {})}
-    />
-  );
+  const dragHandlers = {
+    // Left-drag anywhere in the strip (except on a button) moves the window;
+    // double-click toggles maximize — both via Rust commands.
+    onMouseDown: (event: MouseEvent) => {
+      if (event.button !== 0) return;
+      if ((event.target as HTMLElement).closest("button")) return;
+      invoke("window_start_drag").catch(() => {});
+    },
+    onDoubleClick: (event: MouseEvent) => {
+      if ((event.target as HTMLElement).closest("button")) return;
+      invoke("window_toggle_maximize").catch(() => {});
+    },
+  };
 
   return (
     <header className="titlebar">
-      <svg className="tb-logo" viewBox="0 0 16 16" aria-hidden="true">
-        <path
-          d="M8 1.2 13.7 4.5v6.4L8 14.2 2.3 10.9V4.5Z"
-          fill="none"
-          stroke="#58a6ff"
-          strokeWidth="1.4"
-        />
-        <circle cx="8" cy="7.7" r="1.7" fill="#58a6ff" />
-      </svg>
-      <button
-        type="button"
-        className="app-name"
-        title="查看环境配置"
-        onClick={onToggleEnv}
-      >
-        DeepSeek Harness
-      </button>
-      <span className="version-pill" data-state={updateState}>
-        <span className="version-text">v{displayVersion}</span>
-        {spinnerActive && (
-          <svg className="update-ring" viewBox="0 0 16 16" aria-hidden="true">
-            <circle cx="8" cy="8" r="6" />
-          </svg>
-        )}
-        {updateState === "done" && (
-          <svg
-            className={`check${checkVisible ? " show" : ""}`}
-            viewBox="0 0 16 16"
-            aria-hidden="true"
-          >
-            <path d="M3 8.5 6.5 12 13 4.5" />
-          </svg>
-        )}
-      </span>
-      {envOpen && <span className="tb-env-hint">环境配置</span>}
+      <div className="titlebar-drag" {...dragHandlers} />
 
-      {dragStrip}
+      <div className="tb-identity" {...dragHandlers}>
+        <img className="tb-logo" src={appIcon} alt="" draggable={false} />
+        <button
+          type="button"
+          className="app-name"
+          title="查看环境配置"
+          onClick={onToggleEnv}
+        >
+          DeepSeek Harness
+        </button>
+        <span className="version-pill" data-state={updateState}>
+          <span className="version-text">v{displayVersion}</span>
+          {spinnerActive && (
+            <svg className="update-ring" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="6" />
+            </svg>
+          )}
+          {updateState === "done" && (
+            <svg
+              className={`check${checkVisible ? " show" : ""}`}
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+            >
+              <path d="M3 8.5 6.5 12 13 4.5" />
+            </svg>
+          )}
+        </span>
+        {envOpen && <span className="tb-env-hint">环境配置</span>}
+      </div>
+
+      <div className="titlebar-drag" {...dragHandlers} />
 
       <button
         type="button"
