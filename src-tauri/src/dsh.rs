@@ -389,6 +389,14 @@ fn try_candidate(app: &AppHandle, candidate: &Candidate) -> Attempt {
                             &format!("candidate died early ({status}); last output: {excerpt}"),
                         );
                     }
+                    // File-level self-heals before signature matching: a
+                    // corrupt settings.yaml (YAML writer dropped the colon
+                    // space) kills every candidate identically, so check the
+                    // file itself rather than the child's wording.
+                    if attempt == 0 && settings_yaml_selfheal() {
+                        supervision_log("settings.yaml repaired; retrying the same candidate");
+                        break; // respawn the candidate once
+                    }
                     if attempt == 0 && !tail.is_empty() {
                         if let Some(pkg) = missing_bundle(&tail) {
                             if repair_profile_bundle(&pkg) {
@@ -546,6 +554,124 @@ fn repair_profile_bundle(pkg: &str) -> bool {
         pnpm.display()
     );
     run_bounded(&cmd, Duration::from_secs(300), "bundle repair")
+}
+
+/// Settings self-heal runs at most once per app session.
+static SETTINGS_HEAL_DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Self-heal `~/.dsh/settings.yaml` when a YAML writer dropped the space
+/// after a mapping colon (`key:value` — invalid YAML). 2026-08-18 incident:
+/// the web UI's serializer emitted `reasoningEfforts:max`, the hot reload
+/// crash-looped dsh web, and the desktop showed an empty window with endless
+/// startup retries. Guarded by a full parse both before (is it actually
+/// broken?) and after (did the fix make it valid?) — a fix that still fails
+/// to parse is refused, and the original is always backed up first.
+fn settings_yaml_selfheal() -> bool {
+    if SETTINGS_HEAL_DONE.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return false;
+    }
+    let home = std::env::var("USERPROFILE").unwrap_or_default();
+    let path = Path::new(&home).join(".dsh").join("settings.yaml");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    if yaml_parses(&text) {
+        return false; // healthy — the crash is something else
+    }
+    let backup = path.with_extension("yaml.dshbak");
+    let _ = std::fs::copy(&path, &backup);
+    let fixed = fix_yaml_colon_spacing(&text);
+    if !yaml_parses(&fixed) {
+        log_write(
+            LogLevel::Error,
+            &format!(
+                "[dsh-desktop] settings.yaml 解析失败且冒号空格修复无效;手动编辑 {} 保证每个 key: 后有空格(原文件已备份 {})",
+                path.display(),
+                backup.display()
+            ),
+        );
+        return false;
+    }
+    match std::fs::write(&path, &fixed) {
+        Ok(()) => {
+            log_write(
+                LogLevel::Warn,
+                &format!(
+                    "[dsh-desktop] settings.yaml 自动修复:为缺失空格的 key: 补空格(疑似 Web UI 序列化器缺陷,建议反馈);原文件备份 {}",
+                    backup.display()
+                ),
+            );
+            true
+        }
+        Err(e) => {
+            log_write(
+                LogLevel::Error,
+                &format!("[dsh-desktop] settings.yaml 修复写入失败:{e}"),
+            );
+            false
+        }
+    }
+}
+
+/// Full-file YAML parse check (round-trip guard: nothing invalid is ever
+/// written back).
+fn yaml_parses(text: &str) -> bool {
+    serde_yaml::from_str::<serde_yaml::Value>(text).is_ok()
+}
+
+/// Insert the missing space in block-mapping `key:value` lines. Lines inside
+/// literal/indented block scalars (`|` or `>`) are left untouched so string
+/// content is never rewritten.
+fn fix_yaml_colon_spacing(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 16);
+    let mut block_indent: Option<usize> = None;
+    for line in text.lines() {
+        let indent = line.len() - line.trim_start().len();
+        if let Some(depth) = block_indent {
+            if line.trim().is_empty() || indent > depth {
+                out.push_str(line);
+                out.push('\n');
+                continue;
+            }
+            block_indent = None;
+        }
+        if let Some(fixed) = fix_one_colon(line) {
+            out.push_str(&fixed);
+        } else {
+            let trimmed = line.trim_end();
+            if trimmed.ends_with('|') || trimmed.ends_with('>') {
+                block_indent = Some(indent);
+            }
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    out
+}
+
+/// `key:value` → `key: value` for one line, when the first colon is
+/// immediately followed by a non-space, non-comment character. Quoted keys
+/// are left alone (conservative).
+fn fix_one_colon(line: &str) -> Option<String> {
+    let indent_len = line.len() - line.trim_start().len();
+    let rest = &line[indent_len..];
+    let rest = rest.strip_prefix("- ").unwrap_or(rest);
+    let colon = rest.find(':')?;
+    let (key, value) = rest.split_at(colon);
+    let value = &value[1..];
+    if value.is_empty() || value.starts_with(' ') || value.starts_with('\t') || value.starts_with('#') {
+        return None;
+    }
+    if key.trim().is_empty() || key.contains('"') || key.contains('\'') {
+        return None;
+    }
+    let prefix_len = line.len() - rest.len();
+    Some(format!(
+        "{}{}: {}",
+        &line[..prefix_len],
+        key,
+        value
+    ))
 }
 
 /// pnpm as an absolute path: PATH first, then the npm-global fallback (GUI

@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.6.4 — 2026-08-18
+
+修复:**settings.yaml 自愈**(2026-08-18 23:33 实机复现,Web UI 序列化器把 `reasoningEfforts:max` 写成缺空格的非法 YAML,热重载崩溃循环,窗口无内容无限重启)。
+
+- **文件级自愈**:候选进程早退时 parse 检查 `~/.dsh/settings.yaml`——解析失败且仅需为 `key:` 后补空格时:先备份(`settings.yaml.dshbak`)→修复→**round-trip 验证(parse 通过才落盘)**→原地重试候选;修复无效则 ERROR 给出手动编辑路径,绝不写回非法文件
+- 修复仅动 `key:value` 缺空格行,`|`/`>` 字面块内容不碰;每会话至多一次
+- 崩溃可见性(stderr 尾部进窗口/日志)由 v1.6.3 提供——本次实机观察在 1.6.3 生效前
+- 根因在 @linxin666/dsh-web-ui-all 0.2.0 的 YAML 序列化器(裸标量值未按 `key: value` 输出),建议反馈上游
+
+Fix: settings.yaml self-heal (real incident 23:33 — the web UI's serializer wrote `reasoningEfforts:max` with no space, hot-reload crash-looped dsh web behind an empty window).
+
+- On candidate early-exit the shell parse-checks settings.yaml; when the only fix needed is colon spacing it backs up, repairs, **verifies by parsing before writing back**, and retries the candidate in place; unrepairable files get an ERROR with the manual path — invalid YAML is never written
+- Only `key:value` lines are touched; literal blocks (|/>) are preserved; once per session
+
 ## v1.6.3 — 2026-08-18
 
 修复:插件同步虚报成功 / 崩溃无感知 / 冷却期连锁故障(来自 2026-08-18 晚家用机真实故障复盘)。
