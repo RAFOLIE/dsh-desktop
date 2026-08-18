@@ -1,6 +1,6 @@
 # dsh-desktop-plugin
 
-> **版本规则**:本插件与桌面应用共用**同一条版本线**(如插件 1.4.2 = 应用 v1.4.2);插件单独改进时版本号继续前进,始终 ≥ 应用版本。
+> **版本规则(2026-08-16 起)**:本插件与桌面应用**版本线解耦**——应用经 GitHub Release 自由前进(现 v1.6.2),npm 包仅在插件代码变更时发布(现 1.5.10)。两线版本号不一致是**有意设计**:内容相同的空包只会触发所有用户的插件市场更新提示与重复下载。桌面应用启动时自动把已装插件对齐 npm 最新版(只升不降)。
 
 DSH 插件:安装并启动 [dsh-desktop-windowos](https://github.com/RAFOLIE/dsh-desktop-windowos) 桌面壳(DeepSeek Harness 的 Windows 托盘应用)。
 
@@ -38,7 +38,7 @@ dsh plugin --profile web add dsh-desktop-plugin
 
 # English
 
-> **Versioning rule**: npm publishes are on-demand: this package ships only when the plugin itself changes (currently 1.5.9); the app version advances independently and aligns installed plugins to npm latest.
+> **Versioning rule** (since 2026-08-16): npm and the app version lines are decoupled — the app advances freely via GitHub Releases (currently v1.6.2) while this package ships only when the plugin code changes (currently 1.5.10). The mismatch is deliberate: identical empty packages would just trigger update prompts for every plugin user. The desktop app aligns installed plugins to npm latest (upgrade only).
 
 DSH plugin that installs and launches [dsh-desktop-windowos](https://github.com/RAFOLIE/dsh-desktop-windowos) — the Windows tray shell for DeepSeek Harness.
 
