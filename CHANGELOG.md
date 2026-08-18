@@ -19,6 +19,12 @@
 - **日志 ComfyUI 化**:①只记壳自身事件——DSH web 子进程输出改为丢弃(DSH 有自己的 ~/.dsh/logs,不再重复收录,日志不再膨胀);②统一 `[本地时间] [INFO/WARN/ERROR] 消息` 格式(GetLocalTime 原生 FFI,零依赖);③每次启动把旧日志轮转成 `dsh.log_<时间戳>.log`(留最新 20 个),新会话从 `** session/app` 横幅开始;④日志 tab 逐行着色(横幅蓝/WARN 琥珀/ERROR 红)
 - **诊断包**:环境 tab 新增「复制诊断包」——一键把 env_info 全部事实+本次会话日志组装成 markdown,复制到剪贴板+存为 diagnostics-<时间戳>.md 并打开目录;以后问 AI 配置/启动问题直接粘贴,AI 无需翻 DSH 前端目录与全局安装
 - 环境探测(node/powershell)加无窗口标志,启动时不再闪终端
+- **环境管理面板 v2**(按详细规格书重构):搜索栏(过滤实例与字段)+筛选栏(全部/本地/外部/运行中/异常)+左侧实例栏(唯一真实实例,状态圆点+当前标签+蓝指示条)+右侧标签导航(环境/日志可用,启动参数/存储/终端/关于禁用提示暂未支持)+底部操作栏(刷新检测带 loading/重启后端带确认/更多下拉:打开工作目录·日志目录·复制环境 JSON·导出诊断包;新增实例禁用)
+- 环境页四组(运行状态/DSH 内核/组件版本/位置与存储):主功能标题在卡片外上方+每组合一个大圆角卡,行间细线,行=名称/值/图标按钮(30px 复制⧉·打开目录📁,aria-label,已复制 Toast)
+- env_info 新增:日志目录、工作目录、缓存目录(未检测到)、Profile 磁盘占用(有界遍历≤5万文件)
+- 日志页迁入标签:INFO/WARNING/ERROR 筛选胶囊、暂停/恢复自动刷新、复制全部、清空显示(仅前端)、跳到最新、上滚自动暂停跟随
+- 交互:Esc/遮罩/✕ 三路关闭、打开焦点进搜索框关闭还原到名字按钮、focus 蓝描边、<1100px/<900px 响应式(单栏+行上下结构)
+- 新命令 dsh_restart_backend(真实重启 dsh web,同托盘)
 
 Feature: a custom in-app title bar — always visible, click the name to open the env panel (persistent-shell iframe architecture).
 

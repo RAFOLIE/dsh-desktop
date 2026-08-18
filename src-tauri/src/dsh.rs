@@ -591,12 +591,40 @@ pub(crate) fn log_tail(n: usize) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Total bytes under `dir`, bounded: the walk stops counting past 50k files
+/// (returns the partial sum) so a huge profile tree can't stall env_info.
+fn dir_size_bounded(dir: &Path) -> Option<u64> {
+    fn walk(dir: &Path, seen: &mut u32, total: &mut u64) {
+        const MAX_FILES: u32 = 50_000;
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            if *seen >= MAX_FILES {
+                return;
+            }
+            let Ok(meta) = entry.metadata() else { continue };
+            if meta.is_dir() {
+                walk(&entry.path(), seen, total);
+            } else {
+                *seen += 1;
+                *total += meta.len();
+            }
+        }
+    }
+    if !dir.is_dir() {
+        return None;
+    }
+    let (mut seen, mut total) = (0u32, 0u64);
+    walk(dir, &mut seen, &mut total);
+    Some(total)
+}
+
 /// Environment facts for the env panel, modelled on Comfy Desktop's
 /// StatusFactPanel data shape: every field is gathered independently and
 /// degrades to null — the panel never hangs on a probe.
 pub fn env_info(app: &AppHandle) -> Value {
     let home = std::env::var("USERPROFILE").unwrap_or_default();
     let settings = read_settings();
+    let profile_dir = Path::new(&home).join(".dsh").join("profiles").join("web");
     let install_dir = tauri::utils::platform::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(|p| p.display().to_string()));
@@ -620,7 +648,17 @@ pub fn env_info(app: &AppHandle) -> Value {
             "version": run_capture("node", &["--version"]),
         },
         "plugins": profile_plugin_versions(),
-        "profileDir": Path::new(&home).join(".dsh").join("profiles").join("web").display().to_string(),
+        "profileDir": profile_dir.display().to_string(),
+        "logDir": log_path().parent().map(|p| p.display().to_string()),
+        // Where the DSH child actually runs: explicit override, else the
+        // effective default (user profile).
+        "workspaceDir": std::env::var("DSH_CWD")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .or_else(|| Some(home.clone()))
+            .filter(|v| !v.is_empty()),
+        "cacheDir": Option::<String>::None,
+        "profileSizeBytes": dir_size_bounded(&profile_dir),
         "logTail": log_tail(25),
     });
     // The probes run windowless; leave a breadcrumb in the shared log so the

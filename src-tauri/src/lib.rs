@@ -62,6 +62,14 @@ fn log_tail(lines: usize) -> Vec<String> {
     dsh::log_tail(lines.clamp(50, 1000))
 }
 
+/// Panel「重启」: restart the dsh web backend (same flow as the tray entry —
+/// teardown, clear the port, re-run the startup chain; the shell's boot view
+/// and webchat iframe re-attach through the usual events).
+#[tauri::command]
+fn dsh_restart_backend(app: AppHandle) {
+    dsh::restart(app);
+}
+
 /// One-paste AI context: env facts + this session's log as a markdown
 /// bundle, saved beside the log and returned so the panel can also put it
 /// on the clipboard. Solves "AI has to hunt through the whole DSH install".
@@ -273,7 +281,7 @@ pub fn run() {    tauri::Builder::default()
         }))
         .plugin(tauri_plugin_opener::init())
         .manage(dsh::DshState::new())
-        .invoke_handler(tauri::generate_handler![dsh_retry, dsh_download, dsh_custom_path, dsh_install_npm, dsh_npm_probe, env_info, open_path, log_tail, diagnostic_export, dsh_exit, window_minimize, window_toggle_maximize, window_close, window_start_drag, window_is_maximized])
+        .invoke_handler(tauri::generate_handler![dsh_retry, dsh_download, dsh_custom_path, dsh_install_npm, dsh_npm_probe, env_info, open_path, log_tail, diagnostic_export, dsh_restart_backend, dsh_exit, window_minimize, window_toggle_maximize, window_close, window_start_drag, window_is_maximized])
         .setup(|app| {
             // Session-start log rotation (ComfyUI-style) before anything logs
             // or spawns: previous session archived under a timestamped name.
