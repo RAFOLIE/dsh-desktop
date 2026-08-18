@@ -373,21 +373,14 @@ input:focus-visible {
   outline: none;
 }
 
-/* 2. Filter bar */
-.ep-filters {
+/* 2. Body: tabs + full-width single-column content */
+.ep-body {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 60px;
-  flex: none;
-  padding: 0 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.ep-divider-v {
-  width: 1px;
-  height: 20px;
-  background: rgba(255, 255, 255, 0.12);
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .ep-pill {
@@ -421,7 +414,7 @@ input:focus-visible {
   color: #4c9aff;
 }
 
-/* Text tool buttons (disabled entries included). */
+/* Text tool buttons (log toolbar etc.). */
 .ep-tool-btn {
   height: 32px;
   padding: 0 14px;
@@ -437,106 +430,62 @@ input:focus-visible {
   color: #e7eaf0;
 }
 
-/* 3. Body: instance sidebar + detail */
-.ep-body {
-  display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
-  flex: 1;
-  min-height: 0;
-}
-
-.ep-sidebar {
+/* Detail column */
+.ep-detail {
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  background: #12151c;
-  border-right: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.ep-sidebar-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 16px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #969dab;
-}
-
-.ep-help {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  font-size: 10px;
-  font-weight: 400;
-  color: #969dab;
-  cursor: help;
-}
-
-.ep-sidebar-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 8px 12px;
-}
-
-.ep-instance {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 64px;
-  padding: 0 16px;
-  border-radius: 8px;
-}
-
-.ep-instance:hover {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.ep-instance.selected {
-  background: rgba(76, 154, 255, 0.14);
-}
-
-.ep-instance.selected::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 10px;
-  bottom: 10px;
-  width: 3px;
-  border-radius: 2px;
-  background: #4c9aff;
-}
-
-.ep-instance-name {
   flex: 1;
   min-width: 0;
-  font-size: 14px;
-  color: #e7eaf0;
-  overflow-wrap: anywhere;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.ep-instance-tag {
-  flex: none;
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid #4c9aff66;
-  color: #4c9aff;
-}
-
-.ep-sidebar-empty {
+.ep-nav {
   display: flex;
-  flex-direction: column;
   align-items: center;
   gap: 12px;
-  padding: 32px 12px;
-  font-size: 13px;
+  height: 56px;
+  flex: none;
+  padding: 0 32px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.ep-tab {
+  height: 56px;
+  padding: 0 16px;
+  font-size: 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   color: #969dab;
+}
+
+.ep-tab:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.04);
+  color: #e7eaf0;
+}
+
+.ep-tab.active {
+  color: #4c9aff;
+  border-bottom-color: #4c9aff;
+}
+
+.ep-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 32px;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+/* Cards use the full width, capped on ultra-wide windows. */
+.ep-content-inner {
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 .ep-dot {
@@ -554,60 +503,6 @@ input:focus-visible {
 .ep-dot.warn {
   background: #f2a93b;
   box-shadow: 0 0 6px #f2a93b88;
-}
-
-.ep-dot.err {
-  background: #ef5b67;
-  box-shadow: 0 0 6px #ef5b6788;
-}
-
-/* Detail column */
-.ep-detail {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.ep-nav {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 64px;
-  flex: none;
-  padding: 0 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.ep-tab {
-  height: 64px;
-  padding: 0 16px;
-  font-size: 14px;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  color: #969dab;
-}
-
-.ep-tab:hover:not(.disabled):not(.active) {
-  background: rgba(255, 255, 255, 0.04);
-  color: #e7eaf0;
-}
-
-.ep-tab.active {
-  color: #4c9aff;
-  border-bottom-color: #4c9aff;
-  background: rgba(76, 154, 255, 0.08);
-}
-
-.ep-content {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 24px;
 }
 
 /* Env overview: title OUTSIDE above one big card per group. */
@@ -633,11 +528,11 @@ input:focus-visible {
 
 .ep-row {
   display: grid;
-  grid-template-columns: 180px minmax(0, 1fr) auto;
+  grid-template-columns: 190px minmax(0, 1fr) auto;
   align-items: center;
   column-gap: 16px;
   min-height: 58px;
-  padding: 10px 18px;
+  padding: 10px 20px;
   box-sizing: border-box;
 }
 
@@ -792,22 +687,16 @@ input:focus-visible {
   color: #f85149;
 }
 
-/* 4. Bottom action bar */
+/* 4. Bottom action bar (right-aligned actions) */
 .ep-bottom {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   height: 72px;
   flex: none;
-  padding: 0 24px;
+  padding: 0 32px;
   border-top: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.ep-bottom-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 
 .ep-secondary {
@@ -890,29 +779,9 @@ input:focus-visible {
 
 /* --- Responsive --- */
 
-@media (max-width: 1099px) {
-  .ep-body {
-    grid-template-columns: 260px minmax(0, 1fr);
-  }
-
-  .ep-row {
-    grid-template-columns: 150px minmax(0, 1fr) auto;
-  }
-}
-
 @media (max-width: 899px) {
   .ep-backdrop {
     padding: 16px;
-  }
-
-  .ep-body {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .ep-sidebar {
-    border-right: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-    max-height: 150px;
   }
 
   .ep-row {

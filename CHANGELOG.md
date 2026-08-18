@@ -25,6 +25,7 @@
 - 日志页迁入标签:INFO/WARNING/ERROR 筛选胶囊、暂停/恢复自动刷新、复制全部、清空显示(仅前端)、跳到最新、上滚自动暂停跟随
 - 交互:Esc/遮罩/✕ 三路关闭、打开焦点进搜索框关闭还原到名字按钮、focus 蓝描边、<1100px/<900px 响应式(单栏+行上下结构)
 - 新命令 dsh_restart_backend(真实重启 dsh web,同托盘)
+- **面板精简**(第二版规格):移除筛选工具栏(打开仪表板/全部/本地/外部/运行中/异常)、左侧实例栏(实例列表/当前标签/新增实例)、四个禁用标签(启动参数/存储/终端/关于)——只留 环境|日志 两标签;主体单栏满宽(卡片内容上限 1400px 居中),搜索只过滤环境字段(占位改「搜索环境信息」),底栏右对齐只留 刷新检测/重启/更多;删除全部配套前端状态与样式
 
 Feature: a custom in-app title bar — always visible, click the name to open the env panel (persistent-shell iframe architecture).
 

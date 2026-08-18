@@ -24,27 +24,12 @@ export type EnvInfo = {
   logTail?: string[];
 };
 
-/** Which detail tab is active. Only env + log are implemented; the rest are
- *  disabled entries with a "暂未支持" tooltip (spec: no fake pages). */
+/** Which detail tab is active. */
 type Tab = "env" | "log";
 
-type Filter = "all" | "local" | "external" | "running" | "error";
-
-const TABS: { id: Tab | "params" | "storage" | "terminal" | "about"; label: string; enabled: boolean }[] = [
-  { id: "env", label: "环境", enabled: true },
-  { id: "log", label: "日志", enabled: true },
-  { id: "params", label: "启动参数", enabled: false },
-  { id: "storage", label: "存储", enabled: false },
-  { id: "terminal", label: "终端", enabled: false },
-  { id: "about", label: "关于", enabled: false },
-];
-
-const FILTERS: { id: Filter; label: string }[] = [
-  { id: "all", label: "全部" },
-  { id: "local", label: "本地" },
-  { id: "external", label: "外部" },
-  { id: "running", label: "运行中" },
-  { id: "error", label: "异常" },
+const TABS: { id: Tab; label: string }[] = [
+  { id: "env", label: "环境" },
+  { id: "log", label: "日志" },
 ];
 
 function formatBytes(bytes: number | null | undefined): string {
@@ -285,9 +270,8 @@ function LogViewer({ onCopy }: { onCopy: (text: string, note: string) => void })
   );
 }
 
-/** The environment-manager dialog per spec: search bar / filter bar /
- *  instance sidebar + detail tabs / bottom action bar. Only real data and
- *  real actions — unsupported entries render disabled with a tooltip. */
+/** The environment panel: search bar / env+log tabs / grouped fact cards /
+ *  bottom action bar. Only real data and real actions. */
 export default function EnvPanel({
   initialTab,
   info,
@@ -305,7 +289,6 @@ export default function EnvPanel({
 }) {
   const [tab, setTab] = useState<Tab>(initialTab);
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
   const [moreOpen, setMoreOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -347,28 +330,8 @@ export default function EnvPanel({
   const dsh = info?.dsh;
   const owner = dsh?.owner;
   const running = dsh?.portAnswering === true;
-  const owned = owner?.owned === true;
-  const external = owner != null && owner.owned === false;
 
-  // The single real instance (never fabricated). Filters and search apply
-  // to whether it is listed at all.
-  const instanceName = "DSH 本机实例";
-  const instanceText = [
-    instanceName,
-    owner?.pid !== undefined ? String(owner.pid) : "",
-    owner?.cmd ?? "",
-  ]
-    .join(" ")
-    .toLowerCase();
   const q = query.trim().toLowerCase();
-  const instanceVisible =
-    (filter === "all" ||
-      (filter === "local" && owned) ||
-      (filter === "external" && external) ||
-      (filter === "running" && running) ||
-      (filter === "error" && !running)) &&
-    (q === "" || instanceText.includes(q));
-
   const matches = (label: string, value: string | null | undefined) =>
     q === "" ||
     label.toLowerCase().includes(q) ||
@@ -420,7 +383,7 @@ export default function EnvPanel({
           <input
             ref={searchRef}
             value={query}
-            placeholder="搜索环境或实例"
+            placeholder="搜索环境信息"
             onChange={(event) => setQuery(event.target.value)}
           />
           {query !== "" ? (
@@ -438,76 +401,21 @@ export default function EnvPanel({
           )}
         </div>
 
-        {/* 2. Filter bar */}
-        <div className="ep-filters">
-          <button type="button" className="ep-tool-btn" disabled title="暂未支持">
-            打开仪表板
-          </button>
-          <span className="ep-divider-v" />
-          {FILTERS.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              className={`ep-pill${filter === f.id ? " active" : ""}`}
-              aria-pressed={filter === f.id}
-              onClick={() => setFilter(f.id)}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-
-        {/* 3. Body: sidebar + detail */}
+        {/* Body: tabs + full-width content (single column) */}
         <div className="ep-body">
-          <aside className="ep-sidebar">
-            <div className="ep-sidebar-title">
-              实例
-              <span className="ep-help" title="实例 = 一个正在提供 3080 服务的 DSH 运行">
-                ?
-              </span>
-            </div>
-            <div className="ep-sidebar-list" role="listbox" aria-label="实例列表">
-              {instanceVisible ? (
-                <div
-                  className="ep-instance selected"
-                  role="option"
-                  aria-selected="true"
-                  tabIndex={0}
-                >
-                  <span className="ep-dot ok" title={running ? "运行正常" : "无应答"} />
-                  <span className="ep-instance-name">{instanceName}</span>
-                  <span className="ep-instance-tag">当前</span>
-                </div>
-              ) : (
-                <div className="ep-sidebar-empty">
-                  未检测到可用实例
-                  <button type="button" className="ep-tool-btn" onClick={onRefresh}>
-                    刷新检测
-                  </button>
-                </div>
-              )}
-            </div>
-          </aside>
-
           <div className="ep-detail">
             <nav className="ep-nav">
-              {TABS.map((t) =>
-                t.enabled ? (
-                  <button
-                    key={t.id}
-                    type="button"
-                    className={`ep-tab${tab === t.id ? " active" : ""}`}
-                    aria-current={tab === t.id ? "page" : undefined}
-                    onClick={() => setTab(t.id as Tab)}
-                  >
-                    {t.label}
-                  </button>
-                ) : (
-                  <button key={t.id} type="button" className="ep-tab disabled" disabled title="暂未支持">
-                    {t.label}
-                  </button>
-                ),
-              )}
+              {TABS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`ep-tab${tab === t.id ? " active" : ""}`}
+                  aria-current={tab === t.id ? "page" : undefined}
+                  onClick={() => setTab(t.id)}
+                >
+                  {t.label}
+                </button>
+              ))}
             </nav>
 
             <div className="ep-content">
@@ -518,7 +426,7 @@ export default function EnvPanel({
                     正在采集环境信息…
                   </div>
                 ) : (
-                  <>
+                  <div className="ep-content-inner">
                     {error !== "" && (
                       <div className="ep-error">
                         检测失败:{error}
@@ -614,7 +522,7 @@ export default function EnvPanel({
                         </SectionCard>
                       </>
                     )}
-                  </>
+                  </div>
                 )
               ) : (
                 <LogViewer onCopy={copy} />
@@ -623,22 +531,18 @@ export default function EnvPanel({
           </div>
         </div>
 
-        {/* 4. Bottom action bar */}
+        {/* 4. Bottom action bar (right-aligned actions only) */}
         <div className="ep-bottom">
-          <button type="button" className="ep-tool-btn" disabled title="暂未支持">
-            ＋ 新增实例
+          <button type="button" className="ep-secondary" disabled={refreshing} onClick={onRefresh}>
+            {refreshing ? "检测中…" : "刷新检测"}
           </button>
-          <div className="ep-bottom-right">
-            <button type="button" className="ep-secondary" disabled={refreshing} onClick={onRefresh}>
-              {refreshing ? "检测中…" : "刷新检测"}
+          <button type="button" className="ep-primary" onClick={restart}>
+            重启
+          </button>
+          <div className="ep-more" ref={moreRef}>
+            <button type="button" className="ep-secondary" onClick={() => setMoreOpen((o) => !o)}>
+              更多 ⌃
             </button>
-            <button type="button" className="ep-primary" onClick={restart}>
-              重启
-            </button>
-            <div className="ep-more" ref={moreRef}>
-              <button type="button" className="ep-secondary" onClick={() => setMoreOpen((o) => !o)}>
-                更多 ⌃
-              </button>
               {moreOpen && (
                 <div className="ep-menu" role="menu">
                   <button
@@ -677,7 +581,6 @@ export default function EnvPanel({
                   </button>
                 </div>
               )}
-            </div>
           </div>
         </div>
 
