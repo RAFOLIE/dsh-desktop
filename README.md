@@ -80,6 +80,7 @@ pnpm install        # 本项目是独立工作区根
 pnpm tauri dev      # 开发模式
 pnpm tauri build    # 产物:src-tauri\target\release\dsh-desktop-windowos.exe
 ```
+> 开发提示:D 盘紧张时用 `CARGO_TARGET_DIR=C:\dsh-build-target` 把编译产物指到 C 盘;**重建前先退出正在运行的应用**(exe 被进程锁定会导致链接失败)。
 
 ### 工作原理
 
@@ -171,6 +172,7 @@ pnpm install        # this project is its own workspace root
 pnpm tauri dev      # dev mode
 pnpm tauri build    # output: src-tauri\target\release\dsh-desktop-windowos.exe
 ```
+> Dev tips: point `CARGO_TARGET_DIR` at a roomier drive if needed, and **quit the running app before rebuilding** (a running exe locks the linker output).
 
 ### How it works
 
