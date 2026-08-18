@@ -245,7 +245,6 @@ function App() {
               <div className="state">
                 <div className="spinner" aria-hidden="true" />
                 <div className="text">
-                  已连接{status.attached ? "(附加到已有实例)" : ""},
                   {update.state === "downloading"
                     ? "等待应用更新完成…"
                     : update.state === "done"

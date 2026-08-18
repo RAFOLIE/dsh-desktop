@@ -106,7 +106,7 @@ fn candidates() -> Vec<Candidate> {
     if let Ok(cmd) = std::env::var("DSH_CMD") {
         if !cmd.trim().is_empty() {
             list.push(Candidate {
-                label: "DSH_CMD".to_string(),
+                label: "自定义启动命令".to_string(),
                 cmd,
                 cwd: cwd.clone(),
                 window: DSH_CMD_WINDOW,
@@ -165,7 +165,7 @@ pub(crate) fn dsh_cli_command(sub: &str) -> Option<String> {
 /// dependencies before booting.
 fn npx_candidate(cwd: String) -> Candidate {
     Candidate {
-        label: "npx --yes @deepseek-ai/dsh web".to_string(),
+        label: "npx 下载并启动".to_string(),
         cmd: "npx --yes @deepseek-ai/dsh web".to_string(),
         cwd,
         window: NPX_FIRST_RUN_WINDOW,
