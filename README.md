@@ -26,7 +26,7 @@ DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeSc
 - **托盘常驻**:关闭窗口(X)只是隐藏到托盘,DSH 后台继续运行;**双击托盘图标**或**右键 → Open DSH** 随时唤回窗口;右键还有「重启 dsh web(后端)」「重启前端(完整重启)」「检查前端更新」「环境信息」
 - **DSH 监护自愈**:DSH 意外退出(市场更新自重启/崩溃)时自动重拉并刷新界面,无需人工干预;连续快速崩溃自动熔断报错
 - **自动更新带进度**:更新时顶栏名字旁绿色圆环旋转 → 完成对勾 → **自动重启生效**(无需手动重开;更新只在启动时发生,不打断对话);应用每次启动自检 GitHub 最新 Release
-- **插件包自动同步**:应用启动时自动把已安装的 dsh-desktop-plugin 对齐到 **npm 最新版**(只升不降,带 pnpm 新发布冷却期旁路),插件市场不再反复提示重新下载
+- **插件包自动同步(带验真)**:应用启动时自动把已安装的 dsh-desktop-plugin 对齐到 **npm 最新版**(只升不降,带 pnpm 新发布冷却期旁路);安装后回读 node_modules 验证真实落地,pnpm 冷却期静默保留旧版不再虚报成功
 - **图片拖放/粘贴**:与浏览器一致——可拖入或粘贴 png/jpg/webp/gif 作为对话附件(DSH v1 支持的四种格式)
 - **一键重启 DSH**:托盘「重启 dsh web(后端)」只重启 DSH 服务(会话数据在 `~/.dsh` 持久化);「重启前端(完整重启)」连壳带后端全新拉起,插件卡死 webchat 时一键满血——面板「更多」里也有同款
 - **托盘图标固定任务栏**:启动时自动写入 Windows 通知区域设置(`IsPromoted`),图标不再每次被收进任务栏角溢出
@@ -122,7 +122,7 @@ Ships as a **single portable bare exe** (~4.5 MB, no installer).
 - **Tray-resident**: closing the window (X) only hides it to the tray while DSH keeps running; **double-click the tray icon** or **right-click → Open DSH** brings the window back; the menu also has "重启 dsh web(后端)" (backend restart), "重启前端(完整重启)" (full app restart — the go-to when a plugin wedges things) and the update check
 - **DSH supervision self-heal**: an unexpected DSH exit (market self-restart / crash) is auto-respawned and the view refreshed, no manual tray action; three consecutive quick deaths trip a crash-loop guard
 - **Auto-update with progress**: while updating, a small green ring spins next to the name → check mark → **auto-restart onto the new build** (checks happen at startup only, never mid-conversation)
-- **Plugin auto-sync**: at startup the installed dsh-desktop-plugin is aligned to **npm latest** (upgrade-only, with the pnpm fresh-release cooldown bypassed) so the plugin market stops re-prompting
+- **Plugin auto-sync (verified)**: at startup the installed dsh-desktop-plugin is aligned to **npm latest** (upgrade-only, cooldown bypassed); the install is then verified against node_modules, so pnpm silently keeping the old version can no longer masquerade as success
 - **Tray icon pinned to the taskbar**: the app writes the Windows notification-area setting (`IsPromoted`) at startup, so the icon no longer falls into the overflow on every launch
 - **Task-done notification**: when a session transitions from running to idle, a Windows toast fires with two buttons — **"Open Window"** (restore & focus) and **"Got it"** (dismiss); left untouched it auto-collapses after a few seconds
 - **Link context menu**: right-clicking a link in the chat shows a clean two-item menu — "Open in browser" / "Copy link" (replacing the misleading default WebView2 menu); left-click still opens external links in the system default browser

@@ -16,6 +16,7 @@
 //! 127.0.0.1:3080 or *spawns* its own tree; only a DSH we spawned is torn down
 //! on exit, an attached instance is left untouched.
 
+use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -122,9 +123,13 @@ fn candidates() -> Vec<Candidate> {
         });
     }
     if dsh_on_path() {
+        // Absolute path: a GUI-started process can carry a PATH that cmd's
+        // own re-resolution doesn't honor for bare `dsh` (2026-08-18 home
+        // report: "'dsh' 不是内部或外部命令" from the GUI chain).
+        let via = where_first("dsh").unwrap_or_else(|| "dsh".to_string());
         list.push(Candidate {
             label: "dsh web".to_string(),
-            cmd: "dsh web".to_string(),
+            cmd: format!("\"{via}\" web"),
             cwd: cwd.clone(),
             window: GLOBAL_WINDOW,
         });
@@ -153,7 +158,9 @@ pub(crate) fn dsh_cli_command(sub: &str) -> Option<String> {
         return Some(format!("\"{path}\" {sub}"));
     }
     if dsh_on_path() {
-        return Some(format!("dsh {sub}"));
+        // Absolute shim path — immune to GUI-env PATH quirks (see candidates).
+        let via = where_first("dsh").unwrap_or_else(|| "dsh".to_string());
+        return Some(format!("\"{via}\" {sub}"));
     }
     if let Some((shim, _root)) = find_local_install() {
         return Some(format!("\"{}\" {sub}", shim.display()));
@@ -341,40 +348,268 @@ pub fn startup(app: AppHandle) {
 }
 
 /// Spawn one candidate and poll until ready, early exit, or window expiry.
+/// One candidate attempt: spawn, wait for readiness, early-exit, or window
+/// expiry. The child's console tail is kept in memory — on early exit it
+/// names the real cause (e.g. pnpm's fresh-release cooldown silently
+/// skipping a profile bundle → "cannot resolve profile bundle"), and a
+/// missing-bundle death triggers one cooldown-bypassed repair + respawn of
+/// the same candidate before giving up.
 fn try_candidate(app: &AppHandle, candidate: &Candidate) -> Attempt {
     log_attempt(candidate);
-    let mut child = match spawn_command(&candidate.cmd, &candidate.cwd) {
-        Ok(c) => c,
-        Err(e) => return Attempt::Failed(format!("无法启动({e})\n")),
+    for attempt in 0..2 {
+        child_tail_clear();
+        let mut child = match spawn_command(&candidate.cmd, &candidate.cwd) {
+            Ok(c) => c,
+            Err(e) => return Attempt::Failed(format!("无法启动({e})\n")),
+        };
+        let pid = child.id();
+        let deadline = Instant::now() + candidate.window;
+        loop {
+            if probe_ready_once() {
+                // The state keeps only the pid (for teardown's tree kill); the
+                // Child handle moves to the supervisor thread, which reaps the
+                // process and reacts to unexpected exits.
+                let state = app.state::<DshState>();
+                *state.inner.lock().unwrap() = Some(DshInner { pid });
+                INTENTIONAL_STOP.store(false, std::sync::atomic::Ordering::Relaxed);
+                emit_ready(app, false, Some(candidate.label.clone()));
+                let app2 = app.clone();
+                std::thread::spawn(move || supervise_child(app2, child, pid, Instant::now()));
+                return Attempt::Ready;
+            }
+            // A missing command exits immediately; surface that instead of
+            // waiting out the whole window — with the child's own last words.
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    let tail = child_tail_last(8);
+                    let excerpt = child_tail_excerpt(4);
+                    if !excerpt.is_empty() {
+                        log_write(
+                            LogLevel::Error,
+                            &format!("candidate died early ({status}); last output: {excerpt}"),
+                        );
+                    }
+                    if attempt == 0 && !tail.is_empty() {
+                        if let Some(pkg) = missing_bundle(&tail) {
+                            if repair_profile_bundle(&pkg) {
+                                supervision_log(&format!(
+                                    "bundle repair installed {pkg}; retrying the same candidate"
+                                ));
+                                break; // respawn the candidate once
+                            }
+                            return Attempt::Failed(format!(
+                                "进程提前退出({status})——缺少 profile 包 {pkg}(疑似 pnpm 新发布冷却期拦截)\n手动修复:在 %USERPROFILE%\\.dsh\\profiles\\web 执行 pnpm add --save-exact {pkg} --config.minimumReleaseAge=0\n完整日志:面板→日志,或 %LOCALAPPDATA%\\dsh-desktop\\dsh.log\n{}",
+                                tail.join("\n")
+                            ));
+                        }
+                    }
+                    let excerpt = if tail.is_empty() {
+                        String::new()
+                    } else {
+                        format!("\n{}", tail.join("\n"))
+                    };
+                    return Attempt::Failed(format!("进程提前退出({status}){excerpt}\n"));
+                }
+                Ok(None) => {}
+                Err(e) => return Attempt::Failed(format!("无法查询子进程({e})\n")),
+            }
+            if Instant::now() >= deadline {
+                kill_tree(pid);
+                let _ = child.wait();
+                let excerpt = child_tail_excerpt(4);
+                return Attempt::Failed(format!(
+                    "就绪超时{}\n",
+                    if excerpt.is_empty() {
+                        String::new()
+                    } else {
+                        format!(",最后输出: {excerpt}")
+                    }
+                ));
+            }
+            std::thread::sleep(PROBE_INTERVAL);
+        }
+    }
+    unreachable!("repair path always returns or respawns exactly once")
+}
+
+/// Rolling tail of the current DSH child's console output. The full stream
+/// is deliberately NOT written to dsh.log (unbounded, and DSH keeps its own
+/// logs) — but crash causes like "cannot resolve profile bundle" only ever
+/// appear on the child's stderr, so the last lines stay in memory for error
+/// payloads and the auto-repair signature.
+static CHILD_TAIL: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
+const CHILD_TAIL_CAP: usize = 60;
+
+fn child_tail_push(line: String) {
+    if let Ok(mut tail) = CHILD_TAIL.lock() {
+        if tail.len() >= CHILD_TAIL_CAP {
+            tail.pop_front();
+        }
+        tail.push_back(line);
+    }
+}
+
+/// Last `n` lines of the child's console output, oldest first.
+pub(crate) fn child_tail_last(n: usize) -> Vec<String> {
+    CHILD_TAIL
+        .lock()
+        .map(|t| t.iter().rev().take(n).rev().cloned().collect())
+        .unwrap_or_default()
+}
+
+fn child_tail_clear() {
+    if let Ok(mut tail) = CHILD_TAIL.lock() {
+        tail.clear();
+    }
+}
+
+/// One-line digest of the tail for log lines.
+pub(crate) fn child_tail_excerpt(max_lines: usize) -> String {
+    child_tail_last(max_lines).join(" ⏎ ")
+}
+
+/// Keep the tail ring fed; runs on its own thread per stream and ends at
+/// EOF when the child dies.
+fn pump_tail<R: std::io::Read>(stream: R) {
+    use std::io::BufRead;
+    for line in std::io::BufReader::new(stream).lines() {
+        match line {
+            Ok(l) => child_tail_push(l),
+            Err(_) => break,
+        }
+    }
+}
+
+/// The package named by dsh's fatal `cannot resolve profile bundle "<pkg>"`
+/// — the signature of a bundle pnpm's fresh-release cooldown silently
+/// skipped during install (seen 2026-08-18: exit-0 sync, missing bundle,
+/// crash loop with zero UI feedback).
+fn missing_bundle(tail: &[String]) -> Option<String> {
+    const MARKER: &str = "cannot resolve profile bundle \"";
+    for line in tail.iter().rev() {
+        if let Some(pos) = line.find(MARKER) {
+            let rest = &line[pos + MARKER.len()..];
+            if let Some(end) = rest.find('"') {
+                let pkg = &rest[..end];
+                if !pkg.is_empty() {
+                    return Some(pkg.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Bundle repair runs at most once per app session — a failing repair must
+/// not turn into a second crash loop.
+static BUNDLE_REPAIR_DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Install a missing bundle into the web profile with the fresh-release
+/// cooldown bypassed — the same override plugin sync uses. Returns whether
+/// the caller should retry the candidate.
+fn repair_profile_bundle(pkg: &str) -> bool {
+    if BUNDLE_REPAIR_DONE.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        log_write(
+            LogLevel::Warn,
+            "[dsh-desktop] bundle repair skipped: already attempted this session",
+        );
+        return false;
+    }
+    // Strict name sanity — this string is headed for a shell command.
+    let clean = pkg
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '@' | '/' | '-' | '.' | '_'));
+    if !clean {
+        log_write(
+            LogLevel::Warn,
+            &format!("[dsh-desktop] bundle repair skipped: odd package name {pkg:?}"),
+        );
+        return false;
+    }
+    let Some(pnpm) = pnpm_path() else {
+        log_write(LogLevel::Warn, "[dsh-desktop] bundle repair skipped: pnpm not found");
+        return false;
     };
-    let pid = child.id();
-    let deadline = Instant::now() + candidate.window;
+    let home = std::env::var("USERPROFILE").unwrap_or_default();
+    let profile_dir = Path::new(&home).join(".dsh").join("profiles").join("web");
+    if !profile_dir.is_dir() {
+        log_write(
+            LogLevel::Warn,
+            "[dsh-desktop] bundle repair skipped: web profile dir missing",
+        );
+        return false;
+    }
+    supervision_log(&format!("bundle repair: pnpm add {pkg} into web profile (cooldown bypassed)"));
+    let cmd = format!(
+        "cd /d \"{}\" && \"{}\" add --save-exact {pkg} --config.minimumReleaseAge=0",
+        profile_dir.display(),
+        pnpm.display()
+    );
+    run_bounded(&cmd, Duration::from_secs(300), "bundle repair")
+}
+
+/// pnpm as an absolute path: PATH first, then the npm-global fallback (GUI
+/// processes can start with a PATH that doesn't resolve .cmd shims).
+fn pnpm_path() -> Option<PathBuf> {
+    where_first("pnpm")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var("APPDATA")
+                .ok()
+                .map(|a| Path::new(&a).join("npm").join("pnpm.cmd"))
+                .filter(|p| p.is_file())
+        })
+}
+
+/// Run one hidden shell command with a hard kill at the cap (repairs can be
+/// big installs; nothing downstream may stall on them).
+fn run_bounded(cmd: &str, cap: Duration, what: &str) -> bool {
+    let mut command = Command::new("cmd");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.raw_arg(format!("/S /C \"{cmd}\""));
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    {
+        command.arg("/C").arg(cmd);
+    }
+    command.env("CI", "true");
+    let Ok(mut child) = command.spawn() else {
+        log_write(
+            LogLevel::Warn,
+            &format!("[dsh-desktop] {what} spawn failed: {cmd}"),
+        );
+        return false;
+    };
+    let deadline = Instant::now() + cap;
     loop {
-        if probe_ready_once() {
-            // The state keeps only the pid (for teardown's tree kill); the
-            // Child handle moves to the supervisor thread, which reaps the
-            // process and reacts to unexpected exits.
-            let state = app.state::<DshState>();
-            *state.inner.lock().unwrap() = Some(DshInner { pid });
-            INTENTIONAL_STOP.store(false, std::sync::atomic::Ordering::Relaxed);
-            emit_ready(app, false, Some(candidate.label.clone()));
-            let app2 = app.clone();
-            std::thread::spawn(move || supervise_child(app2, child, pid, Instant::now()));
-            return Attempt::Ready;
-        }
-        // A missing command exits immediately; surface that instead of
-        // waiting out the whole window.
         match child.try_wait() {
-            Ok(Some(status)) => return Attempt::Failed(format!("进程提前退出({status})\n")),
-            Ok(None) => {}
-            Err(e) => return Attempt::Failed(format!("无法查询子进程({e})\n")),
+            Ok(Some(status)) => {
+                let ok = status.success();
+                log_write(
+                    if ok { LogLevel::Info } else { LogLevel::Warn },
+                    &format!(
+                        "[dsh-desktop] {what} {} (exit {})",
+                        if ok { "ok" } else { "FAILED" },
+                        status.code().unwrap_or(-1)
+                    ),
+                );
+                return ok;
+            }
+            Ok(None) if Instant::now() > deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                log_write(LogLevel::Warn, &format!("[dsh-desktop] {what} timed out ({cap:?}, killed)"));
+                return false;
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(500)),
+            Err(e) => {
+                log_write(LogLevel::Warn, &format!("[dsh-desktop] {what} wait failed: {e}"));
+                return false;
+            }
         }
-        if Instant::now() >= deadline {
-            kill_tree(pid);
-            let _ = child.wait();
-            return Attempt::Failed("就绪超时\n".to_string());
-        }
-        std::thread::sleep(PROBE_INTERVAL);
     }
 }
 
@@ -684,6 +919,12 @@ fn supervise_child(app: AppHandle, mut child: Child, pid: u32, spawned_at: Insta
         return;
     }
     supervision_log(&format!("supervised dsh web (pid {pid}) exited unexpectedly; healing"));
+    // The child's last words name the real cause (e.g. a cooldown-skipped
+    // profile bundle) — keep them in the log and in user-facing errors.
+    let excerpt = child_tail_excerpt(6);
+    if !excerpt.is_empty() {
+        log_write(LogLevel::Error, &format!("[child] {excerpt}"));
+    }
     // Crash-loop guard: three consecutive children that lived under 30s stop
     // the auto-respawn and surface an error instead of spinning forever.
     if spawned_at.elapsed() < Duration::from_secs(30) {
@@ -692,7 +933,7 @@ fn supervise_child(app: AppHandle, mut child: Child, pid: u32, spawned_at: Insta
             supervision_warn(&format!("supervised dsh web (pid {pid}) crashed 3x quickly; auto-respawn stopped"));
             let _ = app.emit(
                 "dsh-status",
-                json!({ "status": "error", "message": "DSH 反复意外退出,已停止自动重启——详见 dsh.log,可稍后用托盘「重启 dsh web(后端)」重试" }),
+                json!({ "status": "error", "message": format!("DSH 反复意外退出,已停止自动重启{}\n完整日志:面板→日志,或 %LOCALAPPDATA%\\dsh-desktop\\dsh.log;可用托盘「重启 dsh web(后端)」重试", if excerpt.is_empty() { String::new() } else { format!("\n最近输出: {excerpt}") }) }),
             );
             return;
         }
@@ -952,10 +1193,9 @@ fn log_attempt(candidate: &Candidate) {
     );
 }
 
-/// Spawn a shell command detached, no console window. The DSH web server's
-/// stdout/stderr is deliberately discarded — it runs forever and would bloat
-/// this log; DSH keeps its own logs under ~/.dsh/logs. Bounded one-shot
-/// commands we own (npm install) still capture via `log_stdio`.
+/// Spawn a shell command detached, no console window, with stdout+stderr
+/// piped into the bounded in-memory tail ring (crash causes stay visible;
+/// the unbounded stream is NOT logged — DSH keeps its own logs).
 fn spawn_command(cmd: &str, cwd: &str) -> std::io::Result<Child> {
     let mut command = Command::new("cmd");
     // pnpm/npx/dsh are .cmd shims on Windows, so route through cmd /C; the
@@ -974,9 +1214,16 @@ fn spawn_command(cmd: &str, cwd: &str) -> std::io::Result<Child> {
         command.arg("/C").arg(cmd);
     }
     command.current_dir(cwd);
-    command.stdout(Stdio::null()).stderr(Stdio::null());
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
     apply_no_window(&mut command);
-    command.spawn()
+    let mut child = command.spawn()?;
+    if let Some(out) = child.stdout.take() {
+        std::thread::spawn(move || pump_tail(out));
+    }
+    if let Some(err) = child.stderr.take() {
+        std::thread::spawn(move || pump_tail(err));
+    }
+    Ok(child)
 }
 
 /// Rotate the log ComfyUI-style at session start: archive the previous

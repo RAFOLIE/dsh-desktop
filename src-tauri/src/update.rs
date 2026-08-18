@@ -499,12 +499,32 @@ fn npm_latest_plugin_version() -> Option<String> {
     doc["dist-tags"]["latest"].as_str().map(str::to_string)
 }
 
+/// The dsh-desktop-plugin version actually installed in a profile (reads
+/// node_modules, the ground truth pnpm leaves behind).
+fn profile_plugin_version(profile_dir: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(
+        profile_dir.join("node_modules").join(PLUGIN_NAME).join("package.json"),
+    )
+    .ok()?;
+    serde_json::from_str::<serde_json::Value>(&text)
+        .ok()?
+        ["version"]
+        .as_str()
+        .map(str::to_string)
+}
+
 /// Keep the npm-installed plugin package on npm's latest: for every DSH
 /// profile that ALREADY has `{PLUGIN_NAME}` installed, pin it to the npm
 /// latest via `dsh plugin add` with the one-shot pnpm fresh-release bypass —
 /// the same override dshmarket's "update now" uses. Profiles without the
 /// plugin are never touched (no silent installs), and steady state (versions
 /// equal) spawns nothing at all.
+///
+/// Exit code alone is NOT success: pnpm's fresh-release cooldown silently
+/// keeps the old version and still exits 0 (2026-08-18 home report — "sync
+/// ok" while node_modules never received the target). Every install is
+/// therefore verified by re-reading node_modules, with one retry and an
+/// explicit cooldown pointer on failure.
 fn sync_plugin_packages() {
     let Some(target) = npm_latest_plugin_version() else {
         log_line("[dsh-desktop] plugin sync skipped: npm latest unavailable");
@@ -519,19 +539,13 @@ fn sync_plugin_packages() {
     };
     for entry in dirs.flatten() {
         let profile = entry.file_name().to_string_lossy().to_string();
-        let manifest = entry
-            .path()
-            .join("node_modules")
-            .join(PLUGIN_NAME)
-            .join("package.json");
-        let Ok(text) = std::fs::read_to_string(&manifest) else {
+        // Profiles without a readable plugin install are never touched —
+        // this also skips pnpm's workspace-level `profiles/node_modules`,
+        // which is not a profile at all.
+        let Some(installed) = profile_plugin_version(&entry.path()) else {
             continue;
         };
-        let Ok(doc) = serde_json::from_str::<serde_json::Value>(&text) else {
-            continue;
-        };
-        let installed = doc["version"].as_str().unwrap_or_default();
-        if installed == target || compare_versions(installed, &target) >= 0 {
+        if installed == target || compare_versions(&installed, &target) >= 0 {
             continue;
         }
         log_line(&format!(
@@ -541,6 +555,33 @@ fn sync_plugin_packages() {
         match dsh::dsh_cli_command(&sub) {
             Some(cmd) => {
                 run_logged(&cmd);
+                match profile_plugin_version(&entry.path()) {
+                    Some(v) if v == target => {
+                        log_line(&format!(
+                            "[dsh-desktop] plugin sync verified: {PLUGIN_NAME}@{v} in profile {profile}"
+                        ));
+                    }
+                    found => {
+                        log_warn(&format!(
+                            "[dsh-desktop] plugin sync NOT verified in profile {profile} (found {found:?}, want {target}) — pnpm 新发布冷却期会静默保留旧版且退出码为 0;重试一次"
+                        ));
+                        if let Some(cmd) = dsh::dsh_cli_command(&sub) {
+                            run_logged(&cmd);
+                        }
+                        match profile_plugin_version(&entry.path()) {
+                            Some(v) if v == target => {
+                                log_line(&format!(
+                                    "[dsh-desktop] plugin sync verified after retry: {PLUGIN_NAME}@{v} in profile {profile}"
+                                ));
+                            }
+                            still => {
+                                log_warn(&format!(
+                                    "[dsh-desktop] plugin sync仍未验证 (found {still:?});手动处理:执行 dsh plugin --profile {profile} add {PLUGIN_NAME}@{target},或等冷却期(约 24h)后下次启动自动同步"
+                                ));
+                            }
+                        }
+                    }
+                }
             }
             None => {
                 log_line("[dsh-desktop] plugin sync skipped: no dsh CLI found outside DSH_CMD");

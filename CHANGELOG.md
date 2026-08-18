@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.6.3 — 2026-08-18
+
+修复:插件同步虚报成功 / 崩溃无感知 / 冷却期连锁故障(来自 2026-08-18 晚家用机真实故障复盘)。
+
+- **sync 验真**:安装命令 exit 0 不再视为成功——回读 profile 的 node_modules 版本,未达目标即 WARN+重试一次+冷却期指引(手动命令/等 24h);顺带跳过 pnpm workspace 级的 `profiles/node_modules` 伪 profile
+- **崩溃可见性**:DSH 子进程 stdout/stderr 改为**有界内存尾部**(60 行,仍不写日志文件)——进程提前退出/监护熔断时,真实死因(如 `cannot resolve profile bundle "..."`)以 ERROR 入日志并附进启动页错误消息,附手动修复命令与日志路径;再无"快捷方式坏了"式静默循环
+- **bundle 缺失自动修复**:识别 `cannot resolve profile bundle "<pkg>"` 签名 → 在 web profile 用 pnpm 带 `--config.minimumReleaseAge=0` 补装(每会话至多一次,300s 上限,包名严格白名单校验)→ 成功则原地重试该候选
+- **启动链绝对路径**:PATH 命中 dsh 后用 where 解析的绝对路径拼命令(candidates 与 dsh_cli_command),不再裸 `dsh` 依赖 cmd 在 GUI 环境下的二次 PATH 解析;pnpm 同理(where→%APPDATA%
+pm 回退)
+- 已知未修(非本仓库):dsh CLI 的 --save-exact 自动追加 minimumReleaseAgeExclude 疑似回归(08-16 有效、08-18 失效),建议反馈 dsh 仓库
+
+Fixes: false-success plugin sync / silent crash loops / cooldown cascade (from a real 2026-08-18 home-machine incident).
+
+- sync now verifies the install by re-reading node_modules (pnpm's fresh-release cooldown silently keeps the old version with exit 0); WARN + one retry + cooldown guidance on mismatch; skips the workspace-level pseudo-profile
+- crash visibility: the DSH child's stdout/stderr feed a bounded in-memory tail (60 lines) — real death causes land in the log as ERROR and in the boot error view with a manual fix command and log path
+- auto-repair: a `cannot resolve profile bundle "<pkg>"` signature triggers a cooldown-bypassed pnpm add into the web profile (once per session, 300s cap, strict name whitelist), then retries the candidate
+- launcher uses absolute dsh/pnpm paths (where + npm-global fallback) instead of bare names that depend on GUI-env PATH re-resolution
+
 ## v1.6.2 — 2026-08-18
 
 新功能:**自绘标题栏**——顶栏常驻,点名字开环境信息(iframe 常驻壳架构)。
