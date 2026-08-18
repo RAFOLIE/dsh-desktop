@@ -62,6 +62,55 @@ fn log_tail(lines: usize) -> Vec<String> {
     dsh::log_tail(lines.clamp(50, 1000))
 }
 
+/// One-paste AI context: env facts + this session's log as a markdown
+/// bundle, saved beside the log and returned so the panel can also put it
+/// on the clipboard. Solves "AI has to hunt through the whole DSH install".
+#[tauri::command]
+fn diagnostic_export(app: AppHandle) -> Result<serde_json::Value, String> {
+    let (date, time, stamp) = dsh::local_time_parts();
+    let info = dsh::env_info(&app);
+    let version = app.package_info().version.to_string();
+    let exe = tauri::utils::platform::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    let log_dir = std::path::PathBuf::from(
+        std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".to_string()),
+    )
+    .join("dsh-desktop");
+    let session_log = std::fs::read_to_string(log_dir.join("dsh.log"))
+        .unwrap_or_else(|_| "(读取失败)".to_string());
+
+    let mut content = String::new();
+    content.push_str("# DSH Desktop 诊断包\n\n");
+    content.push_str(&format!("- 生成时间: {date} {time}\n"));
+    content.push_str(&format!("- 应用: v{version} ({exe})\n"));
+    content.push_str(&format!("- 日志目录: {}\n\n", log_dir.display()));
+    content.push_str("## 环境配置 (env_info)\n\n");
+    content.push_str("```json\n");
+    content.push_str(
+        &serde_json::to_string_pretty(&info).unwrap_or_else(|_| "{}".to_string()),
+    );
+    content.push_str("\n```\n\n");
+    content.push_str("## 本次会话日志 (dsh.log,仅壳事件)\n\n");
+    content.push_str("~~~text\n");
+    content.push_str(&session_log);
+    content.push_str("\n~~~\n");
+
+    let path = log_dir.join(format!("diagnostics-{stamp}.md"));
+    std::fs::create_dir_all(&log_dir)
+        .and_then(|_| std::fs::write(&path, &content))
+        .map_err(|e| format!("诊断包写入失败:{e}"))?;
+    dsh::log_write(
+        dsh::LogLevel::Info,
+        &format!("[dsh-desktop] diagnostic bundle exported: {}", path.display()),
+    );
+    Ok(serde_json::json!({
+        "path": path.display().to_string(),
+        "dir": log_dir.display().to_string(),
+        "content": content,
+    }))
+}
+
 /// Tray「环境信息」: show the window and open the env overlay. The shell stays
 /// loaded next to the webchat iframe, so this is a plain event — no navigation.
 fn open_env_page(app: &AppHandle) {
@@ -224,8 +273,12 @@ pub fn run() {    tauri::Builder::default()
         }))
         .plugin(tauri_plugin_opener::init())
         .manage(dsh::DshState::new())
-        .invoke_handler(tauri::generate_handler![dsh_retry, dsh_download, dsh_custom_path, dsh_install_npm, dsh_npm_probe, env_info, open_path, log_tail, dsh_exit, window_minimize, window_toggle_maximize, window_close, window_start_drag, window_is_maximized])
+        .invoke_handler(tauri::generate_handler![dsh_retry, dsh_download, dsh_custom_path, dsh_install_npm, dsh_npm_probe, env_info, open_path, log_tail, diagnostic_export, dsh_exit, window_minimize, window_toggle_maximize, window_close, window_start_drag, window_is_maximized])
         .setup(|app| {
+            // Session-start log rotation (ComfyUI-style) before anything logs
+            // or spawns: previous session archived under a timestamped name.
+            dsh::rotate_log(app.handle());
+
             #[cfg(windows)]
             ensure_toast_aumid();
 

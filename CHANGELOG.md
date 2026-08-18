@@ -16,6 +16,9 @@
 - 环境数据**启动时预载**(ready 转移自动刷新+手动刷新)——点开面板零加载
 - 新增**日志标签页**(查看日志):dsh.log 尾部 400 行等宽控制台,2 秒自动刷新(可暂停)、自动滚底、复制全部;启动页(启动中/已连接/失败)加「查看日志」入口,卡壳时能实时看到 npx 下载/启动尝试在跑什么
 - 新增 Rust 命令 log_tail(50-1000 行 clamp)
+- **日志 ComfyUI 化**:①只记壳自身事件——DSH web 子进程输出改为丢弃(DSH 有自己的 ~/.dsh/logs,不再重复收录,日志不再膨胀);②统一 `[本地时间] [INFO/WARN/ERROR] 消息` 格式(GetLocalTime 原生 FFI,零依赖);③每次启动把旧日志轮转成 `dsh.log_<时间戳>.log`(留最新 20 个),新会话从 `** session/app` 横幅开始;④日志 tab 逐行着色(横幅蓝/WARN 琥珀/ERROR 红)
+- **诊断包**:环境 tab 新增「复制诊断包」——一键把 env_info 全部事实+本次会话日志组装成 markdown,复制到剪贴板+存为 diagnostics-<时间戳>.md 并打开目录;以后问 AI 配置/启动问题直接粘贴,AI 无需翻 DSH 前端目录与全局安装
+- 环境探测(node/powershell)加无窗口标志,启动时不再闪终端
 
 Feature: a custom in-app title bar — always visible, click the name to open the env panel (persistent-shell iframe architecture).
 

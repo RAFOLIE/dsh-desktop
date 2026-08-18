@@ -616,7 +616,8 @@ function Fact({
 
 /** Environment facts tab. Data arrives prefetched from App (fetched at
  *  startup and on ready transitions) so the tab opens instantly; the refresh
- *  button re-pulls on demand. */
+ *  button re-pulls on demand. The diagnostic-bundle button hands an AI the
+ *  whole picture (env facts + session log) in one paste. */
 function EnvView({
   info,
   error,
@@ -626,6 +627,28 @@ function EnvView({
   error: string;
   onRefresh: () => void;
 }) {
+  const [bundle, setBundle] = useState<"idle" | "busy" | "done" | "fail">("idle");
+
+  const exportBundle = () => {
+    setBundle("busy");
+    invoke<{ path: string; dir: string; content: string }>("diagnostic_export")
+      .then((result) => {
+        navigator.clipboard?.writeText(result.content).catch(() => {});
+        invoke("open_path", { path: result.dir }).catch(() => {});
+        setBundle("done");
+      })
+      .catch(() => setBundle("fail"));
+  };
+
+  const bundleLabel =
+    bundle === "busy"
+      ? "生成中…"
+      : bundle === "done"
+        ? "已复制+已导出"
+        : bundle === "fail"
+          ? "导出失败"
+          : "复制诊断包";
+
   const dsh = info?.dsh;
   const owner = dsh?.owner;
   return (
@@ -634,10 +657,20 @@ function EnvView({
         <span className="env-hint">
           {info === null && error === "" ? "正在采集环境信息…" : "版本与运行时事实,复制或打开目录"}
         </span>
+        <button type="button" className="btn-secondary" onClick={exportBundle}>
+          {bundleLabel}
+        </button>
         <button type="button" className="btn-secondary" onClick={onRefresh}>
           刷新
         </button>
       </div>
+      {(bundle === "done" || bundle === "fail") && (
+        <div className="detail">
+          {bundle === "done"
+            ? "诊断包已复制到剪贴板(直接粘贴给 AI),同时存为 diagnostics-*.md 并已打开所在目录"
+            : "诊断包生成失败,详见日志标签页"}
+        </div>
+      )}
       {error !== "" && <div className="detail">{error}</div>}
 
       {info !== null && (
@@ -684,10 +717,29 @@ function EnvView({
   );
 }
 
+/** Color class per log line: `**` session banner blue, `[TS] [LEVEL]` rows by
+ *  level (timestamped rows are the shell's own events; plain rows would be
+ *  leftover output from one-shot commands like npm install). */
+function logLineClass(line: string): string {
+  if (line.startsWith("**")) return "log-banner";
+  const match = line.match(
+    /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] \[(INFO|WARN|ERROR)\]/,
+  );
+  if (match) {
+    return match[1] === "ERROR"
+      ? "log-error"
+      : match[1] === "WARN"
+        ? "log-warn"
+        : "log-info";
+  }
+  return "";
+}
+
 /** Log console tab (Comfy Desktop "查看日志" style): dark mono pane over the
- *  last 400 lines of dsh.log, auto-refreshing every 2s while open, pinned to
- *  the bottom, with copy-all. Startup attempts, supervision heals, and
- *  update downloads all land in this log. */
+ *  shell's own session log — startup attempts, supervision heals, update
+ *  downloads — auto-refreshing every 2s while open, pinned to the bottom,
+ *  with copy-all. Each app start rotates a fresh file (history kept beside
+ *  it), so this tab is always just this session. */
 function LogConsole() {
   const [lines, setLines] = useState<string[] | null>(null);
   const [auto, setAuto] = useState(true);
@@ -718,7 +770,9 @@ function LogConsole() {
     <div className="log-view">
       <div className="log-actions">
         <span className="log-hint">
-          dsh.log 尾部 400 行{auto ? ",每 2 秒自动刷新" : ""}
+          本次会话日志,仅壳自身事件(启动/监护/更新;每次启动自动轮转,历史在
+          %LOCALAPPDATA%\dsh-desktop)
+          {auto ? ",每 2 秒自动刷新" : ""}
         </span>
         <button type="button" className="btn-secondary" onClick={() => setAuto((a) => !a)}>
           {auto ? "暂停自动刷新" : "自动刷新"}
@@ -735,7 +789,15 @@ function LogConsole() {
         </button>
       </div>
       <pre ref={consoleRef} className="log-console">
-        {lines === null ? "读取中…" : lines.join("\n") || "(空)"}
+        {lines === null
+          ? "读取中…"
+          : lines.map((line, i) => (
+              <span key={i} className={logLineClass(line)}>
+                {line}
+                {"\n"}
+              </span>
+            ))}
+        {lines !== null && lines.length === 0 && "(空)"}
       </pre>
     </div>
   );

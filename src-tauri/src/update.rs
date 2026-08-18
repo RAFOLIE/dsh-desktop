@@ -229,7 +229,7 @@ fn download_with_curl(url: &str, dest: &Path, size: u64, digest: Option<&str>) -
                 last_error = format!("integrity mismatch via {route:?}");
             }
             Err(e) => {
-                log_line(&format!("[dsh-desktop] {e}"));
+                log_warn(&format!("[dsh-desktop] {e}"));
                 last_error = e.to_string();
             }
         }
@@ -396,22 +396,20 @@ fn run_check(app: &AppHandle, on_demand: bool) -> Result<(), String> {
 }
 
 /// Append one line to the shared shell log beside the exe updater's output.
+/// Routes through dsh's timestamped writer so the log tab colors uniformly;
+/// the `[dsh-desktop] ` prefix stays as the source tag.
 fn log_line(line: &str) {
-    let base = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".to_string());
-    let path = std::path::PathBuf::from(base)
-        .join("dsh-desktop")
-        .join("dsh.log");
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    if let Ok(mut file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-    {
-        use std::io::Write;
-        let _ = writeln!(file, "{line}");
-    }
+    crate::dsh::log_write(crate::dsh::LogLevel::Info, line);
+}
+
+/// Same, at Warn (recoverable failures, fallbacks engaged).
+fn log_warn(line: &str) {
+    crate::dsh::log_write(crate::dsh::LogLevel::Warn, line);
+}
+
+/// Same, at Error (the operation failed outright).
+fn log_error(line: &str) {
+    crate::dsh::log_write(crate::dsh::LogLevel::Error, line);
 }
 
 /// Run one shell command hidden, with CI=true (pnpm blocks forever on an
@@ -453,13 +451,13 @@ fn run_logged(cmd: &str) -> bool {
                 if std::time::Instant::now() > deadline {
                     let _ = child.kill();
                     let _ = child.wait();
-                    log_line("[dsh-desktop] plugin sync timed out after 120s (killed); retried next launch");
+                    log_warn("[dsh-desktop] plugin sync timed out after 120s (killed); retried next launch");
                     return false;
                 }
                 std::thread::sleep(Duration::from_millis(500));
             }
             Err(e) => {
-                log_line(&format!("[dsh-desktop] plugin sync wait failed: {e}"));
+                log_warn(&format!("[dsh-desktop] plugin sync wait failed: {e}"));
                 return false;
             }
         }
@@ -535,7 +533,7 @@ fn sync_plugin_packages() {
 pub fn spawn_check(app: AppHandle) {
     std::thread::spawn(move || {
         if let Err(message) = run_check(&app, false) {
-            log_line(&format!("[dsh-desktop] self-update failed: {message}"));
+            log_error(&format!("[dsh-desktop] self-update failed: {message}"));
             let _ = app.emit("app-update", json!({ "state": "failed", "message": message }));
         }
     });

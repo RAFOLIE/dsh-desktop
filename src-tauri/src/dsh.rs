@@ -378,16 +378,107 @@ fn try_candidate(app: &AppHandle, candidate: &Candidate) -> Attempt {
     }
 }
 
-/// One supervision event line to dsh.log.
-fn supervision_log(line: &str) {
+/// Log severity for the shell's own event log.
+#[derive(Clone, Copy)]
+pub(crate) enum LogLevel {
+    Info,
+    Warn,
+    Error,
+}
+
+impl LogLevel {
+    fn tag(self) -> &'static str {
+        match self {
+            LogLevel::Info => "INFO",
+            LogLevel::Warn => "WARN",
+            LogLevel::Error => "ERROR",
+        }
+    }
+}
+
+/// Local time via GetLocalTime — this is a Windows-only shell, so raw FFI
+/// beats pulling a datetime crate. Returns (date, time, filename stamp):
+/// ("2026-08-18", "12:40:03", "2026-08-18T12-40-03-123").
+#[cfg(windows)]
+pub(crate) fn local_time_parts() -> (String, String, String) {
+    #[repr(C)]
+    struct SysTime {
+        year: u16,
+        month: u16,
+        _dow: u16,
+        day: u16,
+        hour: u16,
+        minute: u16,
+        second: u16,
+        millis: u16,
+    }
+    extern "system" {
+        fn GetLocalTime(system_time: *mut SysTime);
+    }
+    let mut st = SysTime {
+        year: 0,
+        month: 0,
+        _dow: 0,
+        day: 0,
+        hour: 0,
+        minute: 0,
+        second: 0,
+        millis: 0,
+    };
+    unsafe { GetLocalTime(&mut st) };
+    (
+        format!("{:04}-{:02}-{:02}", st.year, st.month, st.day),
+        format!("{:02}:{:02}:{:02}", st.hour, st.minute, st.second),
+        format!(
+            "{:04}-{:02}-{:02}T{:02}-{:02}-{:02}-{:03}",
+            st.year, st.month, st.day, st.hour, st.minute, st.second, st.millis
+        ),
+    )
+}
+
+#[cfg(not(windows))]
+pub(crate) fn local_time_parts() -> (String, String, String) {
+    ("1970-01-01".into(), "00:00:00".into(), "1970-01-01T00-00-00-000".into())
+}
+
+/// Append one raw line to the shared log (no timestamp/level) — session
+/// banner lines only.
+fn log_raw(line: &str) {
     use std::io::Write;
     let path = log_path();
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
-        let _ = writeln!(file, "[dsh-desktop] {line}");
+        let _ = writeln!(file, "{line}");
     }
+}
+
+/// The one writer for shell events: `[YYYY-MM-DD HH:MM:SS] [LEVEL] message`.
+/// Everything the shell wants remembered goes through here so the log tab
+/// and diagnostic bundles read uniformly. DSH's own server output is NOT
+/// logged (it keeps its own logs under ~/.dsh/logs) — this log records only
+/// the shell's startup and runtime events, a few dozen lines per session.
+pub(crate) fn log_write(level: LogLevel, message: &str) {
+    use std::io::Write;
+    let (date, time, _) = local_time_parts();
+    let path = log_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(file, "[{date} {time}] [{}] {message}", level.tag());
+    }
+}
+
+/// Shell event at Info level (shorthand for the common case).
+fn supervision_log(line: &str) {
+    log_write(LogLevel::Info, line);
+}
+
+/// Shell event at Warn level.
+fn supervision_warn(line: &str) {
+    log_write(LogLevel::Warn, line);
 }
 
 /// First `where <name>` hit, windowless.
@@ -407,11 +498,15 @@ fn where_first(name: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-/// One captured run of a program (`node --version` style).
+/// One captured run of a program (`node --version` style). No-window flags
+/// matter here: env_info now runs at startup, and a flashing console per
+/// probe (node/powershell) would pop terminals on every launch.
 fn run_capture(program: &str, args: &[&str]) -> Option<String> {
     use std::io::Read;
-    let mut child = Command::new(program)
-        .args(args)
+    let mut command = Command::new(program);
+    command.args(args);
+    apply_no_window(&mut command);
+    let mut child = command
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .spawn()
@@ -505,7 +600,7 @@ pub fn env_info(app: &AppHandle) -> Value {
     let install_dir = tauri::utils::platform::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(|p| p.display().to_string()));
-    json!({
+    let info = json!({
         "app": {
             "version": app.package_info().version.to_string(),
             "installDir": install_dir,
@@ -527,7 +622,11 @@ pub fn env_info(app: &AppHandle) -> Value {
         "plugins": profile_plugin_versions(),
         "profileDir": Path::new(&home).join(".dsh").join("profiles").join("web").display().to_string(),
         "logTail": log_tail(25),
-    })
+    });
+    // The probes run windowless; leave a breadcrumb in the shared log so the
+    // panel's log tab shows that a gather just happened (and when).
+    supervision_log("env_info gathered (port/where/node/plugins)");
+    info
 }
 
 /// Watch the owned DSH child and heal the stack when it dies unexpectedly
@@ -552,7 +651,7 @@ fn supervise_child(app: AppHandle, mut child: Child, pid: u32, spawned_at: Insta
     if spawned_at.elapsed() < Duration::from_secs(30) {
         let deaths = QUICK_DEATHS.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
         if deaths >= 3 {
-            supervision_log(&format!("supervised dsh web (pid {pid}) crashed 3x quickly; auto-respawn stopped"));
+            supervision_warn(&format!("supervised dsh web (pid {pid}) crashed 3x quickly; auto-respawn stopped"));
             let _ = app.emit(
                 "dsh-status",
                 json!({ "status": "error", "message": "DSH 反复意外退出,已停止自动重启——详见 dsh.log,可稍后用托盘「重启 dsh web(后端)」重试" }),
@@ -807,22 +906,19 @@ pub fn teardown(app: &AppHandle) {
     }
 }
 
-/// Append an attempt header to dsh.log so failures are attributable.
+/// Append an attempt header so failures are attributable.
 fn log_attempt(candidate: &Candidate) {
-    use std::io::Write;
-    let path = log_path();
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
-        let _ = writeln!(file, "===== dsh-desktop 启动尝试: {} =====", candidate.label);
-    }
+    log_write(
+        LogLevel::Info,
+        &format!("===== 启动尝试: {} =====", candidate.label),
+    );
 }
 
-/// Spawn a shell command detached, no console window, with stdout+stderr
-/// appended to the log file under %LOCALAPPDATA%\dsh-desktop.
+/// Spawn a shell command detached, no console window. The DSH web server's
+/// stdout/stderr is deliberately discarded — it runs forever and would bloat
+/// this log; DSH keeps its own logs under ~/.dsh/logs. Bounded one-shot
+/// commands we own (npm install) still capture via `log_stdio`.
 fn spawn_command(cmd: &str, cwd: &str) -> std::io::Result<Child> {
-    let (stdout, stderr) = log_streams()?;
     let mut command = Command::new("cmd");
     // pnpm/npx/dsh are .cmd shims on Windows, so route through cmd /C; the
     // candidate command is a shell command string either way. Pass it via
@@ -840,9 +936,53 @@ fn spawn_command(cmd: &str, cwd: &str) -> std::io::Result<Child> {
         command.arg("/C").arg(cmd);
     }
     command.current_dir(cwd);
-    command.stdout(stdout).stderr(stderr);
+    command.stdout(Stdio::null()).stderr(Stdio::null());
     apply_no_window(&mut command);
     command.spawn()
+}
+
+/// Rotate the log ComfyUI-style at session start: archive the previous
+/// session under a timestamped name, keep only the 20 newest archives, and
+/// banner the fresh file. Runs before any child spawns, so every later
+/// append handle lands on the new file.
+pub(crate) fn rotate_log(app: &AppHandle) {
+    let path = log_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+        if path.exists() {
+            let (_, _, stamp) = local_time_parts();
+            let _ = std::fs::rename(&path, path.with_file_name(format!("dsh.log_{stamp}.log")));
+            let mut archives: Vec<_> = std::fs::read_dir(parent)
+                .map(|rd| {
+                    rd.filter_map(|e| e.ok())
+                        .map(|e| e.path())
+                        .filter(|p| {
+                            p.file_name()
+                                .map(|n| n.to_string_lossy().starts_with("dsh.log_"))
+                                .unwrap_or(false)
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            archives.sort();
+            while archives.len() > 20 {
+                let _ = std::fs::remove_file(&archives[0]);
+                archives.remove(0);
+            }
+        }
+    }
+    let (date, time, _) = local_time_parts();
+    let version = app.package_info().version.to_string();
+    let exe = tauri::utils::platform::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    let dir = path
+        .parent()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    log_raw(&format!("** dsh-desktop session: {date} {time}"));
+    log_raw(&format!("** app: v{version} ({exe})"));
+    log_raw(&format!("** log dir: {dir}"));
 }
 
 /// Two append handles to the same log file, one each for stdout/stderr.

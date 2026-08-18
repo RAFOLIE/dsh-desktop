@@ -429,6 +429,23 @@ button:hover {
   overflow-y: auto;
 }
 
+/* Level colors on the shell's own timestamped rows + session banners. */
+.log-banner {
+  color: #58a6ff;
+}
+
+.log-info {
+  color: #9aa0a6;
+}
+
+.log-warn {
+  color: #d29922;
+}
+
+.log-error {
+  color: #f85149;
+}
+
 /* --- Boot-page "查看日志" link (opens the panel on the log tab) --- */
 
 .boot-log-link {
