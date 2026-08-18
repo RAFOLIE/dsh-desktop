@@ -486,7 +486,7 @@ fn profile_plugin_versions() -> Value {
 }
 
 /// Last `n` lines of the shared shell log for the console pane.
-fn log_tail(n: usize) -> Vec<String> {
+pub(crate) fn log_tail(n: usize) -> Vec<String> {
     std::fs::read_to_string(log_path())
         .map(|text| {
             let lines: Vec<&str> = text.lines().collect();

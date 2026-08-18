@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getVersion } from "@tauri-apps/api/app";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import appIcon from "./assets/app-icon.png";
 import "./App.css";
@@ -29,18 +28,21 @@ const REGISTRY_MIRROR = "https://registry.npmmirror.com";
 /** Rust-side parallel speed probe of the two npm registries (ms, null=unreachable). */
 type NpmProbe = { npmjsMs: number | null; npmmirrorMs: number | null; fastest: string | null };
 
+/** Which tab of the secondary panel is open; null = closed. */
+type Overlay = null | "env" | "log";
+
 /** The persistent shell. The window is undecorated; the app's own title bar
- *  rides on top for the whole session (boot view → webchat iframe → env
- *  overlay), so the name is always clickable and the version pill is always
- *  visible. The webchat itself loads in a same-site iframe — the shell never
- *  navigates away, which also keeps chat state alive behind the env overlay. */
+ *  rides on top for the whole session. The webchat loads in a same-site
+ *  iframe — the shell never navigates away, so the name button and the
+ *  blurred secondary panel (env facts / log console) are always one click
+ *  away without losing chat state. Env facts are prefetched at startup so
+ *  opening the panel is instant. */
 function App() {
   const [status, setStatus] = useState<DshStatus>({ status: "starting" });
   const [customPath, setCustomPath] = useState("");
   const [pathError, setPathError] = useState("");
   const [update, setUpdate] = useState<AppUpdate>({ state: "pending" });
   const [checkVisible, setCheckVisible] = useState(false);
-  const [version, setVersion] = useState("");
   const [npmProbe, setNpmProbe] = useState<NpmProbe | null>(null);
   /** The iframe mounts on the first `ready` and stays mounted for the rest of
    *  the session; boot regressions (restart / crash heal) only hide it. */
@@ -50,12 +52,28 @@ function App() {
   /** Bumped on every ready *transition* after the first mount — remounts the
    *  iframe so a restarted backend gets a fresh webchat instead of a dead page. */
   const [reloadKey, setReloadKey] = useState(0);
-  const [envOpen, setEnvOpen] = useState(false);
+  const [overlay, setOverlay] = useState<Overlay>(null);
+  /** Env facts, prefetched at startup (and re-fetched on ready transitions) so
+   *  the panel opens with data already in hand — no per-open loading spin. */
+  const [envInfo, setEnvInfo] = useState<EnvInfo | null>(null);
+  const [envError, setEnvError] = useState("");
 
   // Collapse emit_ready's 10× re-emit into transitions: only a fresh
   // starting→ready edge (re)mounts or reloads the webchat iframe.
   const wasReady = useRef(false);
   const mountedRef = useRef(false);
+
+  const refreshEnv = useCallback(() => {
+    setEnvError("");
+    invoke<EnvInfo>("env_info")
+      .then(setEnvInfo)
+      .catch((e: string) => setEnvError(String(e)));
+  }, []);
+
+  // Prefetch once on mount.
+  useEffect(() => {
+    refreshEnv();
+  }, [refreshEnv]);
 
   // Registry speed probe runs once when the notfound chooser appears; the
   // faster source becomes the primary install button, the other stays as an
@@ -85,6 +103,8 @@ function App() {
               mountedRef.current = true;
               setWebchatMounted(true);
             }
+            // The port owner / pid facts only mean something once DSH is up.
+            refreshEnv();
           }
         } else {
           wasReady.current = false;
@@ -95,7 +115,7 @@ function App() {
         setUpdate(event.payload);
       });
       unlistenShowEnv = await listen("show-env", () => {
-        setEnvOpen(true);
+        setOverlay("env");
       });
       if (cancelled) {
         unlistenStatus();
@@ -103,7 +123,6 @@ function App() {
         unlistenShowEnv();
       }
     })();
-    getVersion().then(setVersion).catch(() => setVersion(""));
 
     return () => {
       cancelled = true;
@@ -111,7 +130,7 @@ function App() {
       unlistenUpdate?.();
       unlistenShowEnv?.();
     };
-  }, []);
+  }, [refreshEnv]);
 
   // Fuse: if the update events never arrive (very old build, IPC hiccup),
   // stop holding the handoff on `pending` — startup must never hang.
@@ -121,8 +140,7 @@ function App() {
     return () => clearTimeout(timer);
   }, [update.state]);
 
-  // The green check appears when the update lands and fades out by itself,
-  // leaving the (new) version behind in the pill.
+  // The green check appears when the update lands and fades out by itself.
   useEffect(() => {
     if (update.state === "done") {
       setCheckVisible(true);
@@ -133,7 +151,7 @@ function App() {
   }, [update]);
 
   // Reveal the webchat on ready — but let a running update finish first so
-  // the pill's spinner→check story is actually seen. After `done` the Rust
+  // the transient titlebar indicator is actually seen. After `done` the Rust
   // side restarts the app onto the new exe; switching here is only the
   // fallback if that restart never arrives. `failed`: show why first.
   useEffect(() => {
@@ -149,9 +167,7 @@ function App() {
     return () => clearTimeout(timer);
   }, [status.status, update.state]);
 
-  const displayVersion =
-    update.state === "done" && update.to ? update.to : version;
-  const spinnerActive =
+  const updateBusy =
     update.state === "pending" ||
     update.state === "checking" ||
     update.state === "downloading";
@@ -159,12 +175,11 @@ function App() {
   return (
     <main className="shell">
       <TitleBar
-        displayVersion={displayVersion}
         updateState={update.state}
-        spinnerActive={spinnerActive}
         checkVisible={checkVisible}
-        envOpen={envOpen}
-        onToggleEnv={() => setEnvOpen((open) => !open)}
+        updateBusy={updateBusy}
+        panelOpen={overlay !== null}
+        onTogglePanel={() => setOverlay((o) => (o === null ? "env" : null))}
       />
 
       <div className="content">
@@ -175,7 +190,7 @@ function App() {
             className="webchat"
             title="DSH webchat"
             allow="clipboard-read; clipboard-write; fullscreen"
-            style={{ display: chatVisible || envOpen ? "block" : "none" }}
+            style={{ display: chatVisible || overlay !== null ? "block" : "none" }}
           />
         )}
 
@@ -204,6 +219,13 @@ function App() {
                     应用更新失败(网络),已跳过——下次启动自动重试,或稍后用托盘「检查前端更新」
                   </div>
                 )}
+                <button
+                  type="button"
+                  className="boot-log-link"
+                  onClick={() => setOverlay("log")}
+                >
+                  查看日志
+                </button>
               </div>
             )}
 
@@ -229,6 +251,13 @@ function App() {
                     应用更新失败(网络),已跳过——下次启动自动重试,或稍后用托盘「检查前端更新」
                   </div>
                 )}
+                <button
+                  type="button"
+                  className="boot-log-link"
+                  onClick={() => setOverlay("log")}
+                >
+                  查看日志
+                </button>
               </div>
             )}
 
@@ -309,37 +338,50 @@ function App() {
                 <button type="button" onClick={() => invoke("dsh_download")}>
                   改用 npx 下载启动
                 </button>
+                <button
+                  type="button"
+                  className="boot-log-link"
+                  onClick={() => setOverlay("log")}
+                >
+                  查看日志
+                </button>
               </div>
             )}
           </div>
         )}
 
-        {envOpen && <EnvPage onClose={() => setEnvOpen(false)} />}
+        {overlay !== null && (
+          <SecondaryPanel
+            tab={overlay}
+            onTab={setOverlay}
+            onClose={() => setOverlay(null)}
+            envInfo={envInfo}
+            envError={envError}
+            onRefreshEnv={refreshEnv}
+          />
+        )}
       </div>
     </main>
   );
 }
 
-/** The app's own title bar (window is undecorated): logo + name (click → env
- *  overlay) + version pill with the update story, a drag region, and native
- *  minimize / maximize-restore / close buttons. All window operations go
- *  through app commands (Rust-side calls) — the frontend window-plugin path
- *  silently no-op'd here. Close goes through the Rust CloseRequested
- *  handler, which hides to tray instead of exiting. */
+/** The app's own title bar (window is undecorated): whale icon + name
+ *  (click → secondary panel) centered, drag regions flanking it, and native
+ *  minimize / maximize-restore / close buttons. Window operations go through
+ *  app commands (Rust-side calls) — the frontend window-plugin path silently
+ *  no-op'd here. Close hides to tray via the Rust CloseRequested handler. */
 function TitleBar({
-  displayVersion,
   updateState,
-  spinnerActive,
   checkVisible,
-  envOpen,
-  onToggleEnv,
+  updateBusy,
+  panelOpen,
+  onTogglePanel,
 }: {
-  displayVersion: string;
   updateState: AppUpdate["state"];
-  spinnerActive: boolean;
   checkVisible: boolean;
-  envOpen: boolean;
-  onToggleEnv: () => void;
+  updateBusy: boolean;
+  panelOpen: boolean;
+  onTogglePanel: () => void;
 }) {
   const [maximized, setMaximized] = useState(false);
 
@@ -376,30 +418,28 @@ function TitleBar({
         <img className="tb-logo" src={appIcon} alt="" draggable={false} />
         <button
           type="button"
-          className="app-name"
-          title="查看环境配置"
-          onClick={onToggleEnv}
+          className={`app-name${panelOpen ? " active" : ""}`}
+          title="查看环境配置与日志"
+          onClick={onTogglePanel}
         >
           DeepSeek Harness
         </button>
-        <span className="version-pill" data-state={updateState}>
-          <span className="version-text">v{displayVersion}</span>
-          {spinnerActive && (
-            <svg className="update-ring" viewBox="0 0 16 16" aria-hidden="true">
-              <circle cx="8" cy="8" r="6" />
-            </svg>
-          )}
-          {updateState === "done" && (
-            <svg
-              className={`check${checkVisible ? " show" : ""}`}
-              viewBox="0 0 16 16"
-              aria-hidden="true"
-            >
-              <path d="M3 8.5 6.5 12 13 4.5" />
-            </svg>
-          )}
-        </span>
-        {envOpen && <span className="tb-env-hint">环境配置</span>}
+        {/* Transient update indicator: small ring while checking/downloading,
+            green check when done — no version text in the bar. */}
+        {updateBusy && (
+          <svg className="update-ring tb-update-dot" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="6" />
+          </svg>
+        )}
+        {updateState === "done" && (
+          <svg
+            className={`check tb-update-dot${checkVisible ? " show" : ""}`}
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+          >
+            <path d="M3 8.5 6.5 12 13 4.5" />
+          </svg>
+        )}
       </div>
 
       <div className="titlebar-drag" {...dragHandlers} />
@@ -442,6 +482,71 @@ function TitleBar({
         </svg>
       </button>
     </header>
+  );
+}
+
+/** The Comfy-Desktop-style secondary panel: a floating card over a blurred,
+ *  dimmed page. Tabs along the top (env facts / log console — more can be
+ *  added later); click the backdrop or the ✕ to close. */
+function SecondaryPanel({
+  tab,
+  onTab,
+  onClose,
+  envInfo,
+  envError,
+  onRefreshEnv,
+}: {
+  tab: Exclude<Overlay, null>;
+  onTab: (tab: Overlay) => void;
+  onClose: () => void;
+  envInfo: EnvInfo | null;
+  envError: string;
+  onRefreshEnv: () => void;
+}) {
+  return (
+    <div
+      className="overlay-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="overlay-panel">
+        <div className="overlay-tabs">
+          <button
+            type="button"
+            className={`overlay-tab${tab === "env" ? " active" : ""}`}
+            onClick={() => onTab("env")}
+          >
+            环境
+          </button>
+          <button
+            type="button"
+            className={`overlay-tab${tab === "log" ? " active" : ""}`}
+            onClick={() => onTab("log")}
+          >
+            日志
+          </button>
+          <div className="overlay-tabs-spacer" />
+          <button
+            type="button"
+            className="overlay-close"
+            title="关闭"
+            onClick={onClose}
+          >
+            <svg viewBox="0 0 10 10" aria-hidden="true">
+              <path d="M0.8 0.8 9.2 9.2 M9.2 0.8 0.8 9.2" stroke="currentColor" strokeWidth="1.2" fill="none" />
+            </svg>
+          </button>
+        </div>
+        <div className="overlay-body">
+          {tab === "env" ? (
+            <EnvView info={envInfo} error={envError} onRefresh={onRefreshEnv} />
+          ) : (
+            <LogConsole />
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -509,85 +614,129 @@ function Fact({
   );
 }
 
-/** Environment panel overlay: slides over whatever is underneath (webchat or
- *  boot view) without unmounting it, so chat state survives a visit. */
-function EnvPage({ onClose }: { onClose: () => void }) {
-  const [info, setInfo] = useState<EnvInfo | null>(null);
-  const [error, setError] = useState("");
-  const load = () => {
-    setError("");
-    setInfo(null);
-    invoke<EnvInfo>("env_info")
-      .then(setInfo)
-      .catch((e: string) => setError(String(e)));
-  };
-  useEffect(() => {
-    load();
-  }, []);
-
+/** Environment facts tab. Data arrives prefetched from App (fetched at
+ *  startup and on ready transitions) so the tab opens instantly; the refresh
+ *  button re-pulls on demand. */
+function EnvView({
+  info,
+  error,
+  onRefresh,
+}: {
+  info: EnvInfo | null;
+  error: string;
+  onRefresh: () => void;
+}) {
   const dsh = info?.dsh;
   const owner = dsh?.owner;
   return (
-    <div className="env-overlay">
-      <div className="env-page">
-        <div className="env-actions">
-          <span className="env-title">环境配置</span>
-          <button type="button" className="btn-secondary" onClick={load}>
-            刷新
-          </button>
-          <button type="button" className="btn-secondary" onClick={onClose}>
-            关闭
-          </button>
-        </div>
-        {error !== "" && <div className="detail">{error}</div>}
-        {info === null && error === "" && <div className="detail">正在采集环境信息…</div>}
-
-        {info !== null && (
-          <>
-            <section className="env-section">
-              <div className="env-section-title">运行状态</div>
-              <Fact label="DSH 端口 (3080)" value={dsh?.portAnswering ? "应答正常" : "无应答"} />
-              <Fact label="占用进程 PID" value={owner?.pid !== undefined ? String(owner.pid) : null} />
-              <Fact label="进程命令行" value={owner?.cmd ?? null} mono />
-              <Fact
-                label="归属"
-                value={owner === null || owner === undefined ? null : owner.owned ? "本应用子进程(受监护)" : "外部实例(不归本应用管)"}
-              />
-              <Fact label="父链" value={owner?.chain ?? null} mono />
-            </section>
-
-            <section className="env-section">
-              <div className="env-section-title">DSH 内核</div>
-              <Fact label="where dsh" value={dsh?.whereDsh ?? null} mono openable />
-              <Fact label="自定义路径" value={dsh?.customPath ?? null} mono openable />
-              <Fact label="本地安装" value={dsh?.localInstall?.shim ?? null} mono openable />
-              <Fact label="DSH_CMD 环境变量" value={dsh?.dshCmd ?? null} mono />
-              <Fact label="DSH_CWD 环境变量" value={dsh?.dshCwd ?? null} mono />
-              <Fact label="npx 回退已授权" value={dsh?.preferNpx ? "是" : "否"} />
-              <Fact label="dsh-desktop-plugin" value={info.plugins?.dshDesktopPlugin ?? null} />
-              <Fact label="dshmarket" value={info.plugins?.dshmarket ?? null} />
-              <Fact label="Profile 目录" value={info.profileDir} mono openable />
-            </section>
-
-            <section className="env-section">
-              <div className="env-section-title">Node 环境</div>
-              <Fact label="node 路径" value={info.node?.path ?? null} mono openable />
-              <Fact label="node 版本" value={info.node?.version ?? null} />
-            </section>
-
-            <section className="env-section">
-              <div className="env-section-title">本应用</div>
-              <Fact label="版本" value={info.app?.version} />
-              <Fact label="安装目录" value={info.app?.installDir} mono openable />
-            </section>
-
-            <section className="env-section">
-              <div className="env-section-title">日志 (dsh.log 尾部)</div>
-              <pre className="env-console">{(info.logTail ?? []).join("\n") || "(空)"}</pre>
-            </section>
-          </>
-        )}
+    <div className="env-view">
+      <div className="env-toolbar">
+        <span className="env-hint">
+          {info === null && error === "" ? "正在采集环境信息…" : "版本与运行时事实,复制或打开目录"}
+        </span>
+        <button type="button" className="btn-secondary" onClick={onRefresh}>
+          刷新
+        </button>
       </div>
+      {error !== "" && <div className="detail">{error}</div>}
+
+      {info !== null && (
+        <>
+          <section className="env-section">
+            <div className="env-section-title">运行状态</div>
+            <Fact label="DSH 端口 (3080)" value={dsh?.portAnswering ? "应答正常" : "无应答"} />
+            <Fact label="占用进程 PID" value={owner?.pid !== undefined ? String(owner.pid) : null} />
+            <Fact label="进程命令行" value={owner?.cmd ?? null} mono />
+            <Fact
+              label="归属"
+              value={owner === null || owner === undefined ? null : owner.owned ? "本应用子进程(受监护)" : "外部实例(不归本应用管)"}
+            />
+            <Fact label="父链" value={owner?.chain ?? null} mono />
+          </section>
+
+          <section className="env-section">
+            <div className="env-section-title">DSH 内核</div>
+            <Fact label="where dsh" value={dsh?.whereDsh ?? null} mono openable />
+            <Fact label="自定义路径" value={dsh?.customPath ?? null} mono openable />
+            <Fact label="本地安装" value={dsh?.localInstall?.shim ?? null} mono openable />
+            <Fact label="DSH_CMD 环境变量" value={dsh?.dshCmd ?? null} mono />
+            <Fact label="DSH_CWD 环境变量" value={dsh?.dshCwd ?? null} mono />
+            <Fact label="npx 回退已授权" value={dsh?.preferNpx ? "是" : "否"} />
+            <Fact label="dsh-desktop-plugin" value={info.plugins?.dshDesktopPlugin ?? null} />
+            <Fact label="dshmarket" value={info.plugins?.dshmarket ?? null} />
+            <Fact label="Profile 目录" value={info.profileDir} mono openable />
+          </section>
+
+          <section className="env-section">
+            <div className="env-section-title">Node 环境</div>
+            <Fact label="node 路径" value={info.node?.path ?? null} mono openable />
+            <Fact label="node 版本" value={info.node?.version ?? null} />
+          </section>
+
+          <section className="env-section">
+            <div className="env-section-title">本应用</div>
+            <Fact label="版本" value={info.app?.version} />
+            <Fact label="安装目录" value={info.app?.installDir} mono openable />
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Log console tab (Comfy Desktop "查看日志" style): dark mono pane over the
+ *  last 400 lines of dsh.log, auto-refreshing every 2s while open, pinned to
+ *  the bottom, with copy-all. Startup attempts, supervision heals, and
+ *  update downloads all land in this log. */
+function LogConsole() {
+  const [lines, setLines] = useState<string[] | null>(null);
+  const [auto, setAuto] = useState(true);
+  const consoleRef = useRef<HTMLPreElement>(null);
+
+  const load = useCallback(() => {
+    invoke<string[]>("log_tail", { lines: 400 })
+      .then(setLines)
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    if (!auto) return;
+    const timer = window.setInterval(load, 2000);
+    return () => window.clearInterval(timer);
+  }, [auto, load]);
+
+  useEffect(() => {
+    const el = consoleRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [lines]);
+
+  return (
+    <div className="log-view">
+      <div className="log-actions">
+        <span className="log-hint">
+          dsh.log 尾部 400 行{auto ? ",每 2 秒自动刷新" : ""}
+        </span>
+        <button type="button" className="btn-secondary" onClick={() => setAuto((a) => !a)}>
+          {auto ? "暂停自动刷新" : "自动刷新"}
+        </button>
+        <button type="button" className="btn-secondary" onClick={load}>
+          刷新
+        </button>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => navigator.clipboard?.writeText((lines ?? []).join("\n"))}
+        >
+          复制全部
+        </button>
+      </div>
+      <pre ref={consoleRef} className="log-console">
+        {lines === null ? "读取中…" : lines.join("\n") || "(空)"}
+      </pre>
     </div>
   );
 }

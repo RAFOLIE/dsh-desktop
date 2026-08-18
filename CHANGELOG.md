@@ -11,6 +11,11 @@
 - 重启/监护自愈的"窗口交给 webchat"机制全部改为事件驱动:`ready` 事件幂等收敛为状态迁移,后端重启时 iframe 自动重载;BOOT_URL 捕获 hack 与三处 `location.replace` eval 退役
 - 窗口控制(最小化/最大化/关闭/拖拽)走自定义 Rust 命令:前端窗口插件调用在本环境静默失效,而自定义命令通道稳定,Rust 侧直调不走前端 ACL
 - Win+方向键贴靠/无边框边缘缩放等原生窗口机制不受影响(实测 snap 正常)
+- **二级面板(Comfy Desktop 式)**:居中浮动卡片+背后网页 backdrop-blur 虚化变暗;顶部标签栏「环境 | 日志」(未来可扩展),点虚化背景或 ✕ 关闭
+- 顶栏去掉版本号胶囊(身份簇=鲸鱼+名字);更新叙事保留为名字旁瞬态小环/绿勾;版本号在环境页与任务栏标题仍可查
+- 环境数据**启动时预载**(ready 转移自动刷新+手动刷新)——点开面板零加载
+- 新增**日志标签页**(查看日志):dsh.log 尾部 400 行等宽控制台,2 秒自动刷新(可暂停)、自动滚底、复制全部;启动页(启动中/已连接/失败)加「查看日志」入口,卡壳时能实时看到 npx 下载/启动尝试在跑什么
+- 新增 Rust 命令 log_tail(50-1000 行 clamp)
 
 Feature: a custom in-app title bar — always visible, click the name to open the env panel (persistent-shell iframe architecture).
 

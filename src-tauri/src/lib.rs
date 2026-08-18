@@ -56,6 +56,12 @@ fn open_path(app: AppHandle, path: String) {
     let _ = app.opener().open_path(path, None::<&str>);
 }
 
+/// Tail of the shared dsh.log for the log tab of the secondary panel.
+#[tauri::command]
+fn log_tail(lines: usize) -> Vec<String> {
+    dsh::log_tail(lines.clamp(50, 1000))
+}
+
 /// Tray「环境信息」: show the window and open the env overlay. The shell stays
 /// loaded next to the webchat iframe, so this is a plain event — no navigation.
 fn open_env_page(app: &AppHandle) {
@@ -218,7 +224,7 @@ pub fn run() {    tauri::Builder::default()
         }))
         .plugin(tauri_plugin_opener::init())
         .manage(dsh::DshState::new())
-        .invoke_handler(tauri::generate_handler![dsh_retry, dsh_download, dsh_custom_path, dsh_install_npm, dsh_npm_probe, env_info, open_path, dsh_exit, window_minimize, window_toggle_maximize, window_close, window_start_drag, window_is_maximized])
+        .invoke_handler(tauri::generate_handler![dsh_retry, dsh_download, dsh_custom_path, dsh_install_npm, dsh_npm_probe, env_info, open_path, log_tail, dsh_exit, window_minimize, window_toggle_maximize, window_close, window_start_drag, window_is_maximized])
         .setup(|app| {
             #[cfg(windows)]
             ensure_toast_aumid();
