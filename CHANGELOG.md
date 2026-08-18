@@ -4,6 +4,9 @@
 
 新功能:**自绘标题栏**——顶栏常驻,点名字开环境信息(iframe 常驻壳架构)。
 
+> 注:本条目按当日迭代顺序记录(面板经历了 基础版→完整版→精简版)。
+> **最终形态**:顶栏=鲸鱼+名字(无版本胶囊);面板=搜索栏+环境|日志两标签+四组信息卡+底部 刷新检测/重启/更多;日志按会话轮转只记壳事件。
+
 - 系统标题栏移除(`decorations: false`),由应用自绘整条顶栏:logo + 「DeepSeek Harness」可点名字(点击展开/收起环境面板) + 版本胶囊(更新圆环/对勾状态机迁入顶栏,全程可见) + 拖拽区 + 最小化/最大化/关闭按钮(关闭仍隐藏到托盘)
 - **架构**:壳不再 `location.replace` 跳转到 webchat——webchat 改为跑在同窗 iframe 里(实测 3080 响应头无 X-Frame-Options/CSP,可嵌入)。壳的前端从此常驻:boot 视图 ↔ 聊天 ↔ 环境面板全在页内切换,聊天状态在环境面板期间保留
 - 环境面板改为顶栏下展开的 overlay(不卸载 iframe);托盘「环境信息」经事件打开,不再靠 URL 导航
@@ -24,7 +27,8 @@
 - env_info 新增:日志目录、工作目录、缓存目录(未检测到)、Profile 磁盘占用(有界遍历≤5万文件)
 - 日志页迁入标签:INFO/WARNING/ERROR 筛选胶囊、暂停/恢复自动刷新、复制全部、清空显示(仅前端)、跳到最新、上滚自动暂停跟随
 - 交互:Esc/遮罩/✕ 三路关闭、打开焦点进搜索框关闭还原到名字按钮、focus 蓝描边、<1100px/<900px 响应式(单栏+行上下结构)
-- 新命令 dsh_restart_backend(真实重启 dsh web,同托盘)
+- 新命令 dsh_restart_backend(真实重启 dsh web,同托盘);**重启前端(完整重启)**:托盘与面板「更多」双入口,relaunch helper 需 arm 成功才退出(防"重启变退出"),连壳带后端全新拉起——插件卡死 webchat 时一键满血
+- 启动文案去黑话:删「已连接(附加到已有实例)」;DSH_CMD→自定义启动命令、npx --yes @deepseek-ai/dsh web→npx 下载并启动
 - **面板精简**(第二版规格):移除筛选工具栏(打开仪表板/全部/本地/外部/运行中/异常)、左侧实例栏(实例列表/当前标签/新增实例)、四个禁用标签(启动参数/存储/终端/关于)——只留 环境|日志 两标签;主体单栏满宽(卡片内容上限 1400px 居中),搜索只过滤环境字段(占位改「搜索环境信息」),底栏右对齐只留 刷新检测/重启/更多;删除全部配套前端状态与样式
 
 Feature: a custom in-app title bar — always visible, click the name to open the env panel (persistent-shell iframe architecture).
@@ -36,6 +40,11 @@ Feature: a custom in-app title bar — always visible, click the name to open th
 - Restart/supervision handoff is event-driven: `ready` re-emits collapse into transitions, the iframe auto-reloads when the backend restarts; the BOOT_URL capture hack and three `location.replace` evals are gone
 - Window controls (min/max/close/drag) go through custom Rust commands — the frontend window-plugin calls silently no-op'd here while the custom-command channel is rock solid, and Rust-side calls bypass the frontend ACL entirely
 - Native window behaviors (snap, undecorated edge resize) are unaffected (snap verified live)
+- Secondary panel (Comfy-Desktop-style, iterated to its final simple form): search bar + 环境|日志 tabs + four grouped fact cards (titles above one big card each, hairline rows, copy/open-dir icon buttons, toasts) + bottom re-detect / restart / more; the chat stays blurred behind; env data prefetched at startup
+- ComfyUI-style session log: shell events only (DSH's own output discarded), `[local-time] [INFO/WARN/ERROR]` colored rows, rotated per session (20 kept), a 查看日志 link on the boot page; log tab has level filters / follow / clear-display / jump-to-latest
+- Diagnostic bundle: 更多 → 导出诊断信息 packs env facts + the session log as markdown to clipboard and a file — one paste gives any AI the full picture
+- Full app restart (重启前端): tray + panel entry, helper must arm before exit; shell and backend both restart fresh
+- env_info gains logDir/workspaceDir/cacheDir/profileSizeBytes; plain-language boot text; windowless env probes
 
 ## v1.6.1 — 2026-08-17
 
