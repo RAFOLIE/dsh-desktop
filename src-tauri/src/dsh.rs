@@ -293,8 +293,30 @@ enum Attempt {
 /// listener registers only after the embedded webview finishes loading, which
 /// races the fast local readiness probe — a one-shot emit can be missed and
 /// leave the window stuck on the boot spinner.
-fn emit_ready(app: &AppHandle, attached: bool, method: Option<String>) {
-    let app2 = app.clone();
+/// Re-announce the backend state to a freshly (re)loaded shell page. F5
+/// reloads the webview; the fresh frontend missed the original `ready` emit
+/// and would sit on the boot spinner forever while the backend is actually
+/// up — the backend itself never restarted. Idempotent with the normal
+/// startup flow (the frontend collapses ready re-emits into transitions).
+pub(crate) fn emit_current_status(app: &AppHandle) {
+    // Let the fresh page's listener register first.
+    std::thread::sleep(Duration::from_millis(600));
+    for _ in 0..5 {
+        if probe_ready_once() {
+            let attached = app.state::<DshState>().inner.lock().unwrap().is_none();
+            let _ = app.emit(
+                "dsh-status",
+                json!({ "status": "ready", "attached": attached, "method": "页面重载" }),
+            );
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(400));
+    }
+    // Backend not answering: leave the UI to the normal startup/supervision
+    // flow — don't invent state here.
+}
+
+fn emit_ready(app: &AppHandle, attached: bool, method: Option<String>) {    let app2 = app.clone();
     std::thread::spawn(move || {
         for _ in 0..10 {
             let mut payload = json!({ "status": "ready", "attached": attached });

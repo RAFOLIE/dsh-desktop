@@ -325,6 +325,19 @@ pub fn run() {    tauri::Builder::default()
             // rides along for image paste.
             .disable_drag_drop_handler()
             .enable_clipboard_access()
+            // F5 (or any webview reload) remounts the shell page, which
+            // missed the original `ready` emit — re-announce the current
+            // backend state so the fresh page doesn't sit on the boot
+            // spinner while the backend is actually up.
+            .on_page_load(|webview, payload| {
+                use tauri::webview::PageLoadEvent;
+                if payload.event() == PageLoadEvent::Finished
+                    && !payload.url().to_string().starts_with("about:")
+                {
+                    let app = webview.app_handle().clone();
+                    std::thread::spawn(move || dsh::emit_current_status(&app));
+                }
+            })
             .on_new_window(move |url, _features| {
                 let app = opener_app.clone();
                 let url = url.to_string();

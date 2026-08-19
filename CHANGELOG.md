@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.6.5 — 2026-08-19
+
+修复:**F5 后卡启动页**。F5 只刷新前端壳页面(后端不动),但 v1.6.2 常驻壳架构下新页面错过了启动时的 `ready` 事件——后端明明在跑,界面却永远停在「正在启动 DSH…」。
+
+- 页面加载完成时重报当前后端状态(探测 3080 → 重发 `ready`(含正确的 attached 归属));与正常启动流程幂等合流
+- 后端不在时应答时不发明状态,仍交给启动/监护流程
+
+Fix: F5 left the shell stuck on the boot spinner. F5 reloads the frontend page only, but the fresh page missed the original ready emit.
+
+- on page load the shell re-announces the current backend state (probe → re-emit ready with correct attached ownership), idempotent with normal startup
+
 ## v1.6.4 — 2026-08-18
 
 修复:**settings.yaml 自愈**(2026-08-18 23:33 实机复现,Web UI 序列化器把 `reasoningEfforts:max` 写成缺空格的非法 YAML,热重载崩溃循环,窗口无内容无限重启)。
