@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.6.6 — 2026-08-19
+
+修复:**「重启前端(完整重启)」对附加模式的外部后端无效**。插件市场显示「已安装,重启后生效」,用户点了完整重启却始终未生效——完整重启此前只杀自己拉起的 DSH,3080 上的外部实例原样存活,新前端起来后附加回旧后端,新插件永远不加载。
+
+- 新增 `stop_backend()`:teardown 自有子进程 + **无条件清空 3080 监听**(外部实例一并),完整重启改走此路径;托盘「重启 dsh web(后端)」同逻辑复用
+- 完整重启后新实例必走全新启动链 → 新装插件被新后端加载,「重启后生效」名副其实
+
+Fix: full app restart left attached external backends alive — freshly installed plugins stayed in 「重启后生效」 limbo.
+
+- new stop_backend(): owned teardown + unconditional 3080 listener clear; full restart now uses it (backend restart reuses the same path)
+
 ## v1.6.5 — 2026-08-19
 
 修复:**F5 后卡启动页**。F5 只刷新前端壳页面(后端不动),但 v1.6.2 常驻壳架构下新页面错过了启动时的 `ready` 事件——后端明明在跑,界面却永远停在「正在启动 DSH…」。

@@ -1272,6 +1272,16 @@ pub fn download_and_start(app: AppHandle) {
 /// stays loaded the whole time: a `starting` event swaps it back to the boot
 /// view, and the chain's `ready` events reload the webchat iframe — the same
 /// flow as a cold start, no page navigation involved.
+/// Stop the DSH backend unconditionally: tear down the owned tree (if we
+/// spawned it) and clear whatever still listens on 3080 — an attached
+/// external instance included. The full app restart uses this: leaving a
+/// stale attached backend behind meant plugins announcing 「重启后生效」
+/// never actually loaded (2026-08-19 report).
+pub fn stop_backend(app: &AppHandle) {
+    teardown(app);
+    kill_port_listeners();
+}
+
 pub fn restart(app: AppHandle) {
     // Pop the window first so a restart triggered while hidden in the tray is
     // visibly underway instead of looking like a no-op.
@@ -1281,8 +1291,7 @@ pub fn restart(app: AppHandle) {
             "dsh-status",
             json!({ "status": "starting", "method": "正在重启 dsh web" }),
         );
-        teardown(&app);
-        kill_port_listeners();
+        stop_backend(&app);
         // Wait for the old instance to stop answering so startup's attach
         // probe cannot latch onto the dying server and report ready.
         let deadline = Instant::now() + Duration::from_secs(10);

@@ -247,7 +247,11 @@ fn download_with_curl(url: &str, dest: &Path, size: u64, digest: Option<&str>) -
 pub fn restart_app(app: &AppHandle) {
     if let Ok(exe) = tauri::utils::platform::current_exe() {
         if relaunch_app(&exe) {
-            crate::dsh::teardown(app);
+            // Stop the backend unconditionally (owned tree AND any attached
+            // external listener on 3080) — a "complete restart" that leaves
+            // an old backend behind keeps freshly installed plugins in
+            // 「重启后生效」 limbo forever (2026-08-19 report).
+            crate::dsh::stop_backend(app);
             app.exit(0);
         }
     }
