@@ -584,11 +584,11 @@ export default function EnvPanel({
                     role="menuitem"
                     onClick={() => {
                       setMoreOpen(false);
-                      if (!window.confirm("完整重启应用?前端与 DSH 后端都会重启,会话数据不丢失")) return;
+                      if (!window.confirm("前后端重启?应用与 DSH 后端都会重启,会话数据不丢失")) return;
                       invoke("app_full_restart").catch(() => {});
                     }}
                   >
-                    重启前端(完整重启)
+                    前后端重启
                   </button>
                 </div>
               )}

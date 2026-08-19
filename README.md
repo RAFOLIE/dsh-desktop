@@ -23,12 +23,12 @@ DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeSc
 - **环境管理面板**:搜索栏(过滤字段名与值)+ 环境|日志 标签 + 四组信息卡(运行状态/DSH 内核/组件版本/位置与存储;主功能标题在卡片外,子功能共处一个大圆角卡)+ 底部 刷新检测/重启/更多;复制⧉、打开目录📁一键图标,聊天状态在面板期间保留(背后虚化)
 - **日志体系(ComfyUI 式)**:dsh.log 只记壳自身事件(启动/监护/更新;DSH web 输出不入日志,不再膨胀),`[本地时间] [INFO/WARN/ERROR]` 格式逐行着色,每次启动轮转历史文件;启动页「查看日志」实时看终端在跑什么;日志页带等级筛选/自动跟随/清空显示
 - **诊断包**:面板「更多 → 导出诊断信息」一键把环境配置+本次日志组装成 markdown——复制到剪贴板可直接粘贴给 AI 排障,无需翻目录查全局安装
-- **托盘常驻**:关闭窗口(X)只是隐藏到托盘,DSH 后台继续运行;**双击托盘图标**或**右键 → Open DSH** 随时唤回窗口;右键还有「重启 dsh web(后端)」「重启前端(完整重启)」「检查前端更新」「环境信息」
+- **托盘常驻**:关闭窗口(X)只是隐藏到托盘,DSH 后台继续运行;**双击托盘图标**或**右键 → Open DSH** 随时唤回窗口;右键还有「重启 dsh web(后端)」「前后端重启」「检查前端更新」「环境信息」
 - **DSH 监护自愈**:DSH 意外退出(市场更新自重启/崩溃)时自动重拉并刷新界面,无需人工干预;连续快速崩溃自动熔断报错
 - **自动更新带进度**:更新时顶栏名字旁绿色圆环旋转 → 完成对勾 → **自动重启生效**(无需手动重开;更新只在启动时发生,不打断对话);应用每次启动自检 GitHub 最新 Release
 - **插件包自动同步(带验真)**:应用启动时自动把已安装的 dsh-desktop-plugin 对齐到 **npm 最新版**(只升不降,带 pnpm 新发布冷却期旁路);安装后回读 node_modules 验证真实落地,pnpm 冷却期静默保留旧版不再虚报成功
 - **图片拖放/粘贴**:与浏览器一致——可拖入或粘贴 png/jpg/webp/gif 作为对话附件(DSH v1 支持的四种格式)
-- **一键重启 DSH**:托盘「重启 dsh web(后端)」只重启 DSH 服务(会话数据在 `~/.dsh` 持久化);「重启前端(完整重启)」连壳带后端全新拉起,插件卡死 webchat 时一键满血——面板「更多」里也有同款
+- **一键重启 DSH**:托盘「重启 dsh web(后端)」只重启 DSH 服务(会话数据在 `~/.dsh` 持久化);「前后端重启」连壳带后端全新拉起(无论后端是谁启动的都会清干净),新装插件随之加载,插件卡死 webchat 时一键满血——面板「更多」里也有同款
 - **托盘图标固定任务栏**:启动时自动写入 Windows 通知区域设置(`IsPromoted`),图标不再每次被收进任务栏角溢出
 - **任务完成通知**:会话从运行中转为空闲时弹 Windows 系统通知,带两个按钮——**「打开窗口」**(复现并聚焦窗口)和**「明白」**(收起通知);不点击则数秒后自动收起
 - **链接右键菜单**:在聊天里的链接上右键,显示简洁菜单「在浏览器中打开」/「复制链接」(替换误导性的 WebView2 默认菜单);左键点击外链仍由系统默认浏览器打开
@@ -119,7 +119,7 @@ Ships as a **single portable bare exe** (~4.5 MB, no installer).
 - **Environment panel**: search bar (filters field names/values) + 环境|日志 tabs + four grouped fact cards (runtime / DSH kernel / component versions / storage) + bottom actions (re-detect / restart / more); copy & open-in-Explorer icon buttons; chat state survives panel visits (page behind is blurred)
 - **ComfyUI-style logging**: dsh.log records only shell events (startup/supervision/updates; DSH's own output is not logged), timestamped `[INFO/WARN/ERROR]` rows with level coloring, rotated per session; a 查看日志 link on the boot page streams what the terminal is doing
 - **Diagnostic bundle**: 更多 → 导出诊断信息 packs env facts + the session log into markdown on your clipboard — paste it to any AI instead of hunting through the install
-- **Tray-resident**: closing the window (X) only hides it to the tray while DSH keeps running; **double-click the tray icon** or **right-click → Open DSH** brings the window back; the menu also has "重启 dsh web(后端)" (backend restart), "重启前端(完整重启)" (full app restart — the go-to when a plugin wedges things) and the update check
+- **Tray-resident**: closing the window (X) only hides it to the tray while DSH keeps running; **double-click the tray icon** or **right-click → Open DSH** brings the window back; the menu also has "重启 dsh web(后端)" (backend restart), "前后端重启" (full restart — shell and backend both, however the backend was started) and the update check
 - **DSH supervision self-heal**: an unexpected DSH exit (market self-restart / crash) is auto-respawned and the view refreshed, no manual tray action; three consecutive quick deaths trip a crash-loop guard
 - **Auto-update with progress**: while updating, a small green ring spins next to the name → check mark → **auto-restart onto the new build** (checks happen at startup only, never mid-conversation)
 - **Plugin auto-sync (verified)**: at startup the installed dsh-desktop-plugin is aligned to **npm latest** (upgrade-only, cooldown bypassed); the install is then verified against node_modules, so pnpm silently keeping the old version can no longer masquerade as success

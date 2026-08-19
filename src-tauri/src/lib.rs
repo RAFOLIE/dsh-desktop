@@ -70,7 +70,7 @@ fn dsh_restart_backend(app: AppHandle) {
     dsh::restart(app);
 }
 
-/// Panel/tray「重启前端(完整重启)」: fresh app process onto the same exe,
+/// Panel/tray「前后端重启」: fresh app process onto the same exe,
 /// owned DSH torn down — the new instance re-runs the whole chain.
 #[tauri::command]
 fn app_full_restart(app: AppHandle) {
@@ -355,7 +355,7 @@ pub fn run() {    tauri::Builder::default()
             // DSH", which users reasonably read as "this also updates").
             let restart = MenuItem::with_id(app, "restart", "重启 dsh web(后端)", true, None::<&str>)?;
             let restart_app_item =
-                MenuItem::with_id(app, "restart-app", "重启前端(完整重启)", true, None::<&str>)?;
+                MenuItem::with_id(app, "restart-app", "前后端重启", true, None::<&str>)?;
             let update = MenuItem::with_id(app, "update", "检查前端更新", true, None::<&str>)?;
             let env = MenuItem::with_id(app, "env", "环境信息", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出(关闭 DSH)", true, None::<&str>)?;

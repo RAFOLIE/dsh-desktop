@@ -239,7 +239,7 @@ fn download_with_curl(url: &str, dest: &Path, size: u64, digest: Option<&str>) -
     )))
 }
 
-/// Tray/panel「重启前端(完整重启)」: arm the detached relaunch helper onto the
+/// Tray/panel「前后端重启」: arm the detached relaunch helper onto the
 /// same exe, tear down the owned DSH tree, then exit. The fresh instance
 /// re-runs the whole startup chain (shell + DSH backend) — the go-to when a
 /// wedged plugin leaves even the webchat unusable. Only exits when the
