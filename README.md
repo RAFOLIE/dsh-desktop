@@ -24,6 +24,7 @@ DeepSeek Harness(DSH)的 Windows 桌面壳,基于 **Tauri v2 + React 18 + TypeSc
 - **日志体系(ComfyUI 式)**:dsh.log 只记壳自身事件(启动/监护/更新;DSH web 输出不入日志,不再膨胀),`[本地时间] [INFO/WARN/ERROR]` 格式逐行着色,每次启动轮转历史文件;启动页「查看日志」实时看终端在跑什么;日志页带等级筛选/自动跟随/清空显示
 - **诊断包**:面板「更多 → 导出诊断信息」一键把环境配置+本次日志组装成 markdown——复制到剪贴板可直接粘贴给 AI 排障,无需翻目录查全局安装
 - **托盘常驻**:关闭窗口(X)只是隐藏到托盘,DSH 后台继续运行;**双击托盘图标**或**右键 → Open DSH** 随时唤回窗口;右键还有「重启 dsh web(后端)」「前后端重启」「检查前端更新」「环境信息」
+- **故障自愈与可见性**:DSH 崩溃的真实原因(子进程输出尾部)以 ERROR 写入日志并直接显示在启动页错误视图,附手动修复命令——再无静默崩溃循环;缺 profile 包时自动带冷却期旁路补装并重试;`settings.yaml` 被 Web UI 写坏(如 `key:value` 缺空格)时自动备份+修复+round-trip 校验后才落盘;启动链用绝对路径解析 dsh/pnpm,不受 GUI 环境 PATH 影响
 - **DSH 监护自愈**:DSH 意外退出(市场更新自重启/崩溃)时自动重拉并刷新界面,无需人工干预;连续快速崩溃自动熔断报错
 - **自动更新带进度**:更新时顶栏名字旁绿色圆环旋转 → 完成对勾 → **自动重启生效**(无需手动重开;更新只在启动时发生,不打断对话);应用每次启动自检 GitHub 最新 Release
 - **插件包自动同步(带验真)**:应用启动时自动把已安装的 dsh-desktop-plugin 对齐到 **npm 最新版**(只升不降,带 pnpm 新发布冷却期旁路);安装后回读 node_modules 验证真实落地,pnpm 冷却期静默保留旧版不再虚报成功
@@ -59,7 +60,7 @@ dsh plugin --profile web add dsh-desktop-plugin
 
 重启 DSH 后插件自动把 exe 装到 `%LOCALAPPDATA%\Programs\dsh-desktop-windowos\`,并在桌面生成**两个**快捷方式——「DeepSeek Harness」(桌面应用)和「DeepSeek Harness Web」(浏览器打开前端);之后每次激活还会**自动升级** exe 到最新 Release(应用运行中也能安全替换)。对话里说“打开桌面应用”可通过 `desktop_launch` 工具直接拉起(exe 缺失时走**后台任务安装**,完成后自动启动,聊天里可轮询进度)。首次运行 exe 会弹 SmartScreen(未签名),点「更多信息 → 仍要运行」即可。
 
-**插件 npm 与应用是两条独立版本线**(npm 现 1.5.10,应用现 v1.6.2,不一致是**有意设计**)——npm 只在插件代码变更时发布,内容相同的空包只会触发所有用户的插件市场更新提示与重复下载;应用走 GitHub Release 自由前进,桌面端启动时自动把已装插件对齐 npm 最新版(只升不降)。详见 [plugin/README.md](plugin/README.md)。
+**插件 npm 与应用是两条独立版本线**(npm 现 1.5.10,应用现 v1.6.7,不一致是**有意设计**)——npm 只在插件代码变更时发布,内容相同的空包只会触发所有用户的插件市场更新提示与重复下载;应用走 GitHub Release 自由前进,桌面端启动时自动把已装插件对齐 npm 最新版(只升不降)。详见 [plugin/README.md](plugin/README.md)。
 
 **方式二:直接下载 exe**
 
@@ -84,7 +85,7 @@ pnpm tauri build    # 产物:src-tauri\target\release\dsh-desktop-windowos.exe
 
 ### 工作原理
 
-- Rust 侧以 `POST /api/host.describe` 探测就绪(`result.ok === true` 即就绪);启动走本地优先候选链:`DSH_CMD` 环境变量(失败自动降级)→ 自定义路径 → `dsh web`(PATH 全局)→ 项目本地 `node_modules\.bin\dsh.cmd` → 已确认过的 npx;链空则发 `notfound` 事件,启动页提供一键 `npm install -g`、npx 备选、路径输入;每个候选独立就绪窗口,失败自动降级并逐次入日志;DSH web 子进程经 `cmd /S /C` 拉起(`CREATE_NO_WINDOW`,stdout/stderr 丢弃——DSH 有自己的 `~/.dsh/logs`,壳日志只记自身事件并按会话轮转)
+- Rust 侧以 `POST /api/host.describe` 探测就绪(`result.ok === true` 即就绪);启动走本地优先候选链:`DSH_CMD` 环境变量(失败自动降级)→ 自定义路径 → `dsh web`(PATH 全局)→ 项目本地 `node_modules\.bin\dsh.cmd` → 已确认过的 npx;链空则发 `notfound` 事件,启动页提供一键 `npm install -g`、npx 备选、路径输入;每个候选独立就绪窗口,失败自动降级并逐次入日志;DSH web 子进程经 `cmd /S /C` 拉起(`CREATE_NO_WINDOW`,绝对路径解析),其输出进**有界内存尾部**(仅崩溃原因可见用,不写日志文件;DSH 有自己的 `~/.dsh/logs`,壳日志只记自身事件并按会话轮转)
 - 监听 `ws://127.0.0.1:3080/api/events.host`,在 `host/session-status` 的 `running` 出现 **true→false 边沿**且主窗口隐藏时,经 `session.list` 取会话标题弹通知
 - 裸 exe 无安装器,Windows 会静默吞 Toast——应用启动时自动在注册表注册 AppUserModelID(`HKCU\Software\Classes\AppUserModelId\com.dsh.desktop`)保证通知可达
 
@@ -120,6 +121,7 @@ Ships as a **single portable bare exe** (~4.5 MB, no installer).
 - **ComfyUI-style logging**: dsh.log records only shell events (startup/supervision/updates; DSH's own output is not logged), timestamped `[INFO/WARN/ERROR]` rows with level coloring, rotated per session; a 查看日志 link on the boot page streams what the terminal is doing
 - **Diagnostic bundle**: 更多 → 导出诊断信息 packs env facts + the session log into markdown on your clipboard — paste it to any AI instead of hunting through the install
 - **Tray-resident**: closing the window (X) only hides it to the tray while DSH keeps running; **double-click the tray icon** or **right-click → Open DSH** brings the window back; the menu also has "重启 dsh web(后端)" (backend restart), "前后端重启" (full restart — shell and backend both, however the backend was started) and the update check
+- **Fault visibility & self-heal**: the child's real death cause (console tail) lands in the log as ERROR and in the boot error view with a manual fix command — no more silent crash loops; a missing profile bundle is auto-installed with the cooldown bypass and retried; a settings.yaml corrupted by the web UI (e.g. `key:value` missing its space) is backed up, repaired, and parse-verified before writing back; dsh/pnpm resolve to absolute paths, immune to GUI-env PATH quirks
 - **DSH supervision self-heal**: an unexpected DSH exit (market self-restart / crash) is auto-respawned and the view refreshed, no manual tray action; three consecutive quick deaths trip a crash-loop guard
 - **Auto-update with progress**: while updating, a small green ring spins next to the name → check mark → **auto-restart onto the new build** (checks happen at startup only, never mid-conversation)
 - **Plugin auto-sync (verified)**: at startup the installed dsh-desktop-plugin is aligned to **npm latest** (upgrade-only, cooldown bypassed); the install is then verified against node_modules, so pnpm silently keeping the old version can no longer masquerade as success
@@ -151,7 +153,7 @@ Not bundled with the exe:
 dsh plugin --profile web add dsh-desktop-plugin
 ```
 
-After restarting DSH, the plugin auto-installs the exe into `%LOCALAPPDATA%\Programs\dsh-desktop-windowos` and creates **two** desktop shortcuts — "DeepSeek Harness" (the desktop app) and "DeepSeek Harness Web" (the web UI in a browser); each later activation also **auto-updates** the exe to the latest Release (safe even while the app is running). Saying "open the desktop app" in chat launches it via the `desktop_launch` tool (a missing exe installs as a **background job** that auto-launches when done, with progress pollable in chat). First run of the unsigned exe shows SmartScreen — click "More info → Run anyway". **The plugin npm and the app run on two independent version lines** (npm currently 1.5.10, app currently v1.6.2 — the mismatch is deliberate): npm publishes only when the plugin code changes, since identical empty packages would just trigger update prompts and re-downloads for every plugin user; the app advances freely via GitHub Releases, and the desktop app aligns installed plugins to npm latest (upgrade only). See [plugin/README.md](plugin/README.md).
+After restarting DSH, the plugin auto-installs the exe into `%LOCALAPPDATA%\Programs\dsh-desktop-windowos` and creates **two** desktop shortcuts — "DeepSeek Harness" (the desktop app) and "DeepSeek Harness Web" (the web UI in a browser); each later activation also **auto-updates** the exe to the latest Release (safe even while the app is running). Saying "open the desktop app" in chat launches it via the `desktop_launch` tool (a missing exe installs as a **background job** that auto-launches when done, with progress pollable in chat). First run of the unsigned exe shows SmartScreen — click "More info → Run anyway". **The plugin npm and the app run on two independent version lines** (npm currently 1.5.10, app currently v1.6.7 — the mismatch is deliberate): npm publishes only when the plugin code changes, since identical empty packages would just trigger update prompts and re-downloads for every plugin user; the app advances freely via GitHub Releases, and the desktop app aligns installed plugins to npm latest (upgrade only). See [plugin/README.md](plugin/README.md).
 
 **Option B: download the exe directly**
 
@@ -176,6 +178,6 @@ pnpm tauri build    # output: src-tauri\target\release\dsh-desktop-windowos.exe
 
 ### How it works
 
-- The Rust side probes readiness via `POST /api/host.describe` (`result.ok === true`); launch runs a local-first candidate chain: `DSH_CMD` env var (first candidate, falls through on failure) → custom path from the boot page (persisted in `settings.json`) → `dsh web` (PATH-global, checked via `where dsh`) → `node_modules\.bin\dsh.cmd` (exe dir / working dir / user profile) → a previously consented `npx --yes @deepseek-ai/dsh web`; an empty chain emits `notfound` and the boot page offers a one-click `npm install -g` (run by the app), the npx fallback, and a manual path input — each candidate has its own readiness window, falls through on failure with every attempt logged; the DSH web child is spawned via `cmd /S /C` (with `CREATE_NO_WINDOW`; its stdout/stderr is discarded — DSH keeps its own logs under `~/.dsh/logs`, and the shell log records only shell events, rotated per session)
+- The Rust side probes readiness via `POST /api/host.describe` (`result.ok === true`); launch runs a local-first candidate chain: `DSH_CMD` env var (first candidate, falls through on failure) → custom path from the boot page (persisted in `settings.json`) → `dsh web` (PATH-global, checked via `where dsh`) → `node_modules\.bin\dsh.cmd` (exe dir / working dir / user profile) → a previously consented `npx --yes @deepseek-ai/dsh web`; an empty chain emits `notfound` and the boot page offers a one-click `npm install -g` (run by the app), the npx fallback, and a manual path input — each candidate has its own readiness window, falls through on failure with every attempt logged; the DSH web child is spawned via `cmd /S /C` (CREATE_NO_WINDOW, absolute-path resolution); its output feeds a bounded in-memory tail (crash-cause visibility only, never written to the log file — DSH keeps its own logs under `~/.dsh/logs`, and the shell log records only shell events, rotated per session)
 - It listens on `ws://127.0.0.1:3080/api/events.host`; on a **true→false edge** of `running` in `host/session-status` while the window is hidden, it resolves the session title via `session.list` and fires the toast
 - A bare exe has no installer, so Windows would silently drop toasts — the app registers its AppUserModelID in the registry at startup (`HKCU\Software\Classes\AppUserModelId\com.dsh.desktop`) to make notifications work
