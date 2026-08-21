@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.6.8 — 2026-08-21
+
+适配:**DSH rc.8 的 `dsh web` 自动打开浏览器**——桌面壳自己就显示 webchat,再弹浏览器是多余的。
+
+- 启动候选构建时探测 `<dsh> web --help`:认得 `--no-open`(rc.8+)才追加该参数——老版本遇未知参数会拒启,探测保证 rc.6/rc.7 零影响;探测结果按路径缓存每会话一次
+- 自定义路径/PATH 全局/本地安装三类候选全部覆盖;DSH_CMD 用户自管命令不改写;npx 回退路径不追加(探测代价高且当前 npm latest=rc.7 追加即拒启)
+
+Adapts to DSH rc.8 auto-opening the browser on local `dsh web`: the flag is probed via `--help` per resolved dsh and only appended when supported (older builds reject unknown options).
+
 ## v1.6.7 — 2026-08-19
 
 改名:「重启前端(完整重启)」→「**前后端重启**」——托盘小图标一眼能懂它前后端都会重启(v1.6.6 起行为已如此:无条件清空 3080 后换新进程);面板「更多」同款改名,确认框文案同步。

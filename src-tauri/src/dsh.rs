@@ -106,6 +106,8 @@ fn candidates() -> Vec<Candidate> {
     let mut list = Vec::new();
     if let Ok(cmd) = std::env::var("DSH_CMD") {
         if !cmd.trim().is_empty() {
+            // User-owned command string: never rewritten (also means the
+            // rc.8+ auto browser-open is theirs to manage via --no-open).
             list.push(Candidate {
                 label: "自定义启动命令".to_string(),
                 cmd,
@@ -117,7 +119,7 @@ fn candidates() -> Vec<Candidate> {
     if let Some(path) = custom_dsh_path() {
         list.push(Candidate {
             label: format!("自定义路径({path})"),
-            cmd: format!("\"{path}\" web"),
+            cmd: format!("\"{path}\" web{}", no_open_suffix(&path)),
             cwd: cwd.clone(),
             window: GLOBAL_WINDOW,
         });
@@ -129,7 +131,7 @@ fn candidates() -> Vec<Candidate> {
         let via = where_first("dsh").unwrap_or_else(|| "dsh".to_string());
         list.push(Candidate {
             label: "dsh web".to_string(),
-            cmd: format!("\"{via}\" web"),
+            cmd: format!("\"{via}\" web{}", no_open_suffix(&via)),
             cwd: cwd.clone(),
             window: GLOBAL_WINDOW,
         });
@@ -137,7 +139,7 @@ fn candidates() -> Vec<Candidate> {
     if let Some((shim, root)) = find_local_install() {
         list.push(Candidate {
             label: format!("本地安装({})", root.display()),
-            cmd: format!("\"{}\" web", shim.display()),
+            cmd: format!("\"{}\" web{}", shim.display(), no_open_suffix(&shim.display().to_string())),
             cwd: root.display().to_string(),
             window: GLOBAL_WINDOW,
         });
@@ -170,6 +172,55 @@ pub(crate) fn dsh_cli_command(sub: &str) -> Option<String> {
 
 /// The official zero-install command; its first run downloads 500+
 /// dependencies before booting.
+/// ` --no-open` when the resolved dsh understands it, else empty. rc.8+
+/// auto-opens the default browser on local `dsh web` — wrong for a desktop
+/// shell that shows the webchat itself — but older builds reject unknown
+/// options outright, so the flag is only appended after probing
+/// `<dsh> web --help` for it. Cached per resolved path per session.
+fn no_open_suffix(dsh_path: &str) -> &'static str {
+    static CACHE: Mutex<Option<(String, bool)>> = Mutex::new(None);
+    if let Ok(cache) = CACHE.lock() {
+        if let Some((path, supported)) = cache.as_ref() {
+            if path == dsh_path {
+                return if *supported { " --no-open" } else { "" };
+            }
+        }
+    }
+    let supported = web_help_mentions_no_open(dsh_path);
+    if let Ok(mut cache) = CACHE.lock() {
+        *cache = Some((dsh_path.to_string(), supported));
+    }
+    if supported {
+        supervision_log(&format!(
+            "dsh at {dsh_path} supports --no-open (rc.8+); suppressing auto browser"
+        ));
+    }
+    if supported { " --no-open" } else { "" }
+}
+
+/// Run `"<dsh>" web --help` hidden and check whether the flag family lists
+/// --no-open. --help is safe on every version (unknown options only fail at
+/// parse time).
+fn web_help_mentions_no_open(dsh_path: &str) -> bool {
+    let mut command = Command::new("cmd");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.raw_arg(format!("/S /C \"\"{dsh_path}\" web --help\""));
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    {
+        command.arg("-c").arg(format!("'{dsh_path}' web --help"));
+    }
+    let Ok(output) = command.output() else {
+        return false;
+    };
+    let text = String::from_utf8_lossy(&output.stdout).to_string()
+        + &String::from_utf8_lossy(&output.stderr);
+    text.contains("--no-open")
+}
+
 fn npx_candidate(cwd: String) -> Candidate {
     Candidate {
         label: "npx 下载并启动".to_string(),
